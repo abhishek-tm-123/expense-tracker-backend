@@ -1,0 +1,95 @@
+from fastapi import APIRouter,HTTPException,Header,Depends,Request,Response
+from passlib.context import CryptContext
+from sqlmodel import Session,select
+from jose import jwt,JWTError
+from datetime import datetime,timedelta
+import os
+
+
+
+from .schemas import Register,Login
+from .database import get_session
+from .models import Users
+
+
+
+router = APIRouter(prefix="/auth")
+pwd = CryptContext(schemes=["argon2"],deprecated="auto")
+
+SECRET = os.getenv("SECRET_KEY")
+ALGO = "HS256"
+
+def create_token(data:dict,expires_minutes:int):
+    to_encode = data.copy()
+    expire = datetime.utcnow()+timedelta(minutes=expires_minutes)
+    to_encode.update({"exp":expire})
+    return jwt.encode(to_encode,SECRET,ALGO)
+
+def get_current_user(authorization: str = Header(None)):
+    if authorization is None:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    try:
+        scheme, token = authorization.split()  # Expect "Bearer <token>"
+        if scheme.lower() != "bearer":
+            raise HTTPException(status_code=401, detail="Invalid auth scheme")
+        payload = jwt.decode(token, SECRET, algorithms=[ALGO])
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+        return int(user_id)
+    except (JWTError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+@router.post("/register")
+def register(user:Register,session:Session = Depends(get_session)):
+    exists = session.exec(select(Users).where(Users.email == user.email)).first()
+    if exists:
+        raise HTTPException(400,"Email already exists")
+    new_user = Users(email=user.email,password=pwd.hash(user.password),name=user.name)
+    session.add(new_user)
+    session.commit()
+    return {"message" : "User created"}
+
+@router.post("/login")
+def login(user: Login,response:Response,session:Session=Depends(get_session)):
+    db_user = session.exec(select(Users).where(Users.email == user.email)).first()
+    if not db_user or not pwd.verify(user.password,db_user.password):
+        raise HTTPException(401,"Invalid credentials")
+    access = create_token({"sub":str(db_user.id)},2)
+    refresh = create_token({"sub":str(db_user.id)},60*24)
+    # Set refresh token in secure httpOnly cookie
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh,
+        httponly=True,
+        secure=False,     # set True when using HTTPS
+        samesite="none",
+        path="/",
+    )
+    return {"access_token": access}
+
+@router.post("/refresh")
+def refresh_token(request: Request):
+    refresh_token = request.cookies.get("refresh_token")
+    print(refresh_token);
+
+    if not refresh_token:
+        raise HTTPException(401, "Refresh token missing")
+
+    try:
+        payload = jwt.decode(refresh_token, SECRET, algorithms=[ALGO])
+        user_id = payload.get("sub")
+
+        new_access = create_token({"sub": str(user_id)}, 2)
+
+        return {"access_token": new_access,"verthe" : payload}
+
+    except JWTError as e:
+        if "Signature has expired" in str(e):
+            raise HTTPException(401, "Refresh token expired")
+        raise HTTPException(401, "Invalid refresh token")
+
+
+
+

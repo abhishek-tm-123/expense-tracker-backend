@@ -1,0 +1,41 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+*.egg
+.dist/
+build/
+dist/
+
+# ---- Virtual Environment ----
+venv/
+env/
+ENV/
+.venv/
+
+# ---- Environment Variables ----
+.env
+
+# ---- SQLite Database ----
+*.db
+*.sqlite3
+
+# If you want to keep seeds or sample DB, exclude here:
+# !sample.db
+
+# ---- Editor / IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+
+# ---- Logs ----
+*.log
+logs/
