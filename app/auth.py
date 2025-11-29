@@ -56,15 +56,15 @@ def login(user: Login,response:Response,session:Session=Depends(get_session)):
     db_user = session.exec(select(Users).where(Users.email == user.email)).first()
     if not db_user or not pwd.verify(user.password,db_user.password):
         raise HTTPException(401,"Invalid credentials")
-    access = create_token({"sub":str(db_user.id)},2)
-    refresh = create_token({"sub":str(db_user.id)},60*24)
+    access = create_token({"sub":str(db_user.user_id)},2)
+    refresh = create_token({"sub":str(db_user.user_id)},60*24)
     # Set refresh token in secure httpOnly cookie
     response.set_cookie(
         key="refresh_token",
         value=refresh,
         httponly=True,
         secure=False,     # set True when using HTTPS
-        samesite="none",
+        samesite="lax",
         path="/",
     )
     return {"access_token": access}
@@ -72,7 +72,7 @@ def login(user: Login,response:Response,session:Session=Depends(get_session)):
 @router.post("/refresh")
 def refresh_token(request: Request):
     refresh_token = request.cookies.get("refresh_token")
-    print(refresh_token);
+    print(refresh_token)
 
     if not refresh_token:
         raise HTTPException(401, "Refresh token missing")

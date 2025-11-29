@@ -10,3 +10,9 @@ class Register(BaseModel):
 class Login(BaseModel):
     email:str
     password:str
+
+class ExpenseCreate(BaseModel):
+    title:str
+    amount:int
+    category:str
+    
