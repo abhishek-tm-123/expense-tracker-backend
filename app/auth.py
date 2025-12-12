@@ -46,7 +46,7 @@ def register(user:Register,session:Session = Depends(get_session)):
     exists = session.exec(select(Users).where(Users.email == user.email)).first()
     if exists:
         raise HTTPException(400,"Email already exists")
-    new_user = Users(email=user.email,password=pwd.hash(user.password),name=user.name)
+    new_user = Users(email=user.email,password=pwd.hash(user.password),name=user.name,account_type=user.account_type)
     session.add(new_user)
     session.commit()
     return {"message" : "User created"}

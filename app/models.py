@@ -8,7 +8,7 @@ class Users(SQLModel, table=True):
     name: str
     email: str = Field(index=True, unique=True)
     password: str
-
+    account_type:str
     expenses: List["Expense"] = Relationship(back_populates="user")
 
 
