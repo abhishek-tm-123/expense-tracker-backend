@@ -45,7 +45,7 @@ def get_current_user(authorization: str = Header(None)):
 def register(user:Register,session:Session = Depends(get_session)):
     exists = session.exec(select(Users).where(Users.email == user.email)).first()
     if exists:
-        raise HTTPException(400,"Email already exists")
+        raise HTTPException(409,"Email already exists")
     new_user = Users(email=user.email,password=pwd.hash(user.password),name=user.name)
     session.add(new_user)
     session.commit()
