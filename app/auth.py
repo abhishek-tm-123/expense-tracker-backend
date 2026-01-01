@@ -57,7 +57,7 @@ def login(user: Login,response:Response,session:Session=Depends(get_session)):
     if not db_user or not pwd.verify(user.password,db_user.password):
         raise HTTPException(401,"Invalid credentials")
     access = create_token({"sub":str(db_user.user_id)},2)
-    refresh = create_token({"sub":str(db_user.user_id)},60*24)
+    refresh = create_token({"sub":str(db_user.user_id)},60*24*7)  # 7 days
     # Set refresh token in secure httpOnly cookie
     response.set_cookie(
         key="refresh_token",
@@ -66,6 +66,7 @@ def login(user: Login,response:Response,session:Session=Depends(get_session)):
         secure=False,     # set True when using HTTPS
         samesite="lax",
         path="/",
+        max_age=60*60*24*7  # 7 days
     )
     return {"access_token": access}
 

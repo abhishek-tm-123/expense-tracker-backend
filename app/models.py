@@ -21,3 +21,12 @@ class Expense(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.user_id")  # FK MUST match table name + column
 
     user: Optional[Users] = Relationship(back_populates="expenses")
+
+class ChatHistory(SQLModel, table=True):
+    chat_id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.user_id")
+    message: str
+    sender: str  # 'user' or 'bot'
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+    user: Optional[Users] = Relationship()

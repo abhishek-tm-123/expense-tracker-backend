@@ -15,4 +15,12 @@ class ExpenseCreate(BaseModel):
     title:str
     amount:int
     category:str
+
+class chatMessage(BaseModel):
+    message: str
+
+class chatHistoryMessage(BaseModel):
+    user_id: int
+    message: str
+    sender: str  # 'user' or 'bot'
     

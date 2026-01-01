@@ -1,0 +1,183 @@
+text,intent
+add expense 200 food,add_expense
+add expense 500 rent,add_expense
+spent 300 on snacks,add_expense
+spent 150 on travel,add_expense
+i spent 250 on food,add_expense
+i paid 400 for shopping,add_expense
+add 600 fuel,add_expense
+expense 120 snacks,add_expense
+paid 90 for food,add_expense
+today i spent 200 on food,add_expense
+yesterday i spent 300 on travel,add_expense
+i bought groceries for 450,add_expense
+i paid rent 8000,add_expense
+spent 220 on fuel,add_expense
+add food expense 180,add_expense
+add travel expense 900,add_expense
+i spent 75 on snacks,add_expense
+paid 120 for fuel,add_expense
+i spent money on shopping,add_expense
+expense of 350 food,add_expense
+i just spent 500 on rent,add_expense
+add expense of 250 food,add_expense
+spent 100 on snacks today,add_expense
+paid 60 for tea,add_expense
+i paid 700 for groceries,add_expense
+add fuel expense 400,add_expense
+spent 280 shopping,add_expense
+i spent 150 today on food,add_expense
+paid for travel 1200,add_expense
+add shopping expense 999,add_expense
+i used 300 for fuel,add_expense
+expense food 200,add_expense
+add rent expense 8500,add_expense
+spent 50 on snacks,add_expense
+i paid 100 for breakfast,add_expense
+expense travel 600,add_expense
+spent money on food,add_expense
+paid dinner 450,add_expense
+i spent 350 on shopping,add_expense
+add expense 100 fuel,add_expense
+i spent cash on snacks,add_expense
+paid 200 food today,add_expense
+spent 150 fuel yesterday,add_expense
+add expense groceries 500,add_expense
+i paid 90 for snacks,add_expense
+expense of travel 1000,add_expense
+how much did i spend,total_expenses
+how much money did i spend,total_expenses
+total expenses,total_expenses
+what is my total spending,total_expenses
+how much have i spent,total_expenses
+tell me my total expenses,total_expenses
+money spent till now,total_expenses
+total money spent,total_expenses
+how much did i spend today,total_expenses
+how much did i spend yesterday,total_expenses
+how much did i spend last week,total_expenses
+how much did i spend this month,total_expenses
+total expenses this month,total_expenses
+total expenses last month,total_expenses
+how much money went out,total_expenses
+what is my spending,total_expenses
+show total spending,total_expenses
+give me my total,total_expenses
+total expense today,total_expenses
+total expense yesterday,total_expenses
+how much money have i used,total_expenses
+what is my expense total,total_expenses
+how much did i spend so far,total_expenses
+total expenses till now,total_expenses
+calculate my total expenses,total_expenses
+what is total money spent,total_expenses
+total spending this week,total_expenses
+how much was spent this week,total_expenses
+total amount spent,total_expenses
+total cost till now,total_expenses
+what is my expense amount,total_expenses
+how much money did i lose,total_expenses
+total spent amount,total_expenses
+tell me spending total,total_expenses
+what is my overall expense,total_expenses
+total spending report,total_expenses
+how much did i pay in total,total_expenses
+total expenses for this year,total_expenses
+how much did i spend last month,total_expenses
+sum of my expenses,total_expenses
+what is total expense,total_expenses
+how much is my total spending,total_expenses
+total money usage,total_expenses
+show my expenses,show_expenses
+list my expenses,show_expenses
+what did i spend on,show_expenses
+show expense history,show_expenses
+show all expenses,show_expenses
+show recent expenses,show_expenses
+show today's expenses,show_expenses
+expenses this week,show_expenses
+what expenses do i have,show_expenses
+display expenses,show_expenses
+show expense list,show_expenses
+show spending history,show_expenses
+show where my money went,show_expenses
+list all my spending,show_expenses
+show past expenses,show_expenses
+show last expenses,show_expenses
+show expense records,show_expenses
+show expenses for today,show_expenses
+show expenses for this week,show_expenses
+show expenses for this month,show_expenses
+list recent expenses,show_expenses
+expense list,show_expenses
+show all spending,show_expenses
+show my spending,show_expenses
+display expense list,show_expenses
+show expense details,show_expenses
+show expenses breakdown,show_expenses
+show spending details,show_expenses
+list expenses today,show_expenses
+show expense summary,show_expenses
+show my past expenses,show_expenses
+what are my expenses,show_expenses
+show expenses yesterday,show_expenses
+show expenses last week,show_expenses
+show expenses last month,show_expenses
+show expense data,show_expenses
+show transaction history,show_expenses
+show money spent,show_expenses
+show spending log,show_expenses
+list spending history,show_expenses
+show expense report,show_expenses
+show expenses till now,show_expenses
+show all my expenses,show_expenses
+what did i buy,show_expenses
+where did my money go,show_expenses
+show expense entries,show_expenses
+hello,unknown
+hi,unknown
+hey,unknown
+how are you,unknown
+what can you do,unknown
+help me,unknown
+who are you,unknown
+tell me a joke,unknown
+good morning,unknown
+good night,unknown
+thank you,unknown
+thanks,unknown
+ok,unknown
+okay,unknown
+hmm,unknown
+yes,unknown
+no,unknown
+maybe,unknown
+what is this app,unknown
+how does this work,unknown
+can you help,unknown
+open settings,unknown
+logout,unknown
+login,unknown
+profile,unknown
+update profile,unknown
+delete account,unknown
+what is my name,unknown
+who made you,unknown
+tell me something,unknown
+random text here,unknown
+abc xyz,unknown
+lorem ipsum,unknown
+nothing,unknown
+just checking,unknown
+test message,unknown
+hello bot,unknown
+are you real,unknown
+what time is it,unknown
+date today,unknown
+weather today,unknown
+news today,unknown
+who is prime minister,unknown
+play music,unknown
+open youtube,unknown
+call mom,unknown
+send message,unknown
