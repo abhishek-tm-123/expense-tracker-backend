@@ -1,7 +1,7 @@
 import re
 from fastapi import APIRouter,Depends,HTTPException
-from sqlmodel import Session,select
-
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession as Session
 from .auth import get_current_user
 from .database import get_session
 from .schemas import chatMessage
@@ -30,51 +30,52 @@ def predict_intent(text: str) -> str:
 
 router = APIRouter(prefix="/chat")
 
-def save_chat_history(user_id:int,message:str,sender:str,session:Session):   
+async def save_chat_history(user_id:int,message:str,sender:str,session:Session):   
     chat_entry = ChatHistory(
         user_id=user_id,
         message=message,
         sender=sender
     )
     session.add(chat_entry)
-    session.commit()
-    session.refresh(chat_entry)
+    await session.commit()
     return chat_entry
 
 @router.get("/history")
-def get_chat_history(session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
+async def get_chat_history(session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
     stmt = select(ChatHistory).where(ChatHistory.user_id == current_user).order_by(ChatHistory.timestamp)
-    chat_history = session.exec(stmt).all()
+    result = await session.execute(stmt)
+    chat_history = result.scalars().all()
     return [
         { "sender": c.sender, "text": c.message ,"time":c.timestamp}
         for c in chat_history
     ]
 
 @router.delete("/clear")
-def clear_chat(
+async def clear_chat(
     session: Session = Depends(get_session),
     current_user: int = Depends(get_current_user)
 ):
     stmt = select(ChatHistory).where(ChatHistory.user_id == current_user)
-    chats = session.exec(stmt).all()
+    result = await session.execute(stmt)
+    chats = result.scalars().all()
 
     for chat in chats:
         session.delete(chat)
 
-    session.commit()
+    await session.commit()
 
     return {"message": "Chat history cleared"}
 
 
 @router.post("/message")
-def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
+async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
     # rule based chat bot system
 
     text = chatmessage.message.lower().strip()
 
     intent = predict_intent(text)
 
-    save_chat_history(current_user, chatmessage.message, 'user', session)
+    await save_chat_history(current_user, chatmessage.message, 'user', session)
 
    
     if intent == "add_expense":
@@ -83,7 +84,7 @@ def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_sessi
         category_match = re.search(r"(food|travel|rent|snacks|shopping|fuel)", text)
         if not amount_match or not category_match:
             response_message = "Please provide both amount and category to add an expense."
-            save_chat_history(current_user, response_message, 'bot', session)
+            await save_chat_history(current_user, response_message, 'bot', session)
         else:
             amount = int(amount_match.group())
             category = category_match.group()
@@ -96,10 +97,9 @@ def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_sessi
                 category=category
             )
             session.add(expense)
-            session.commit()
-
+            await session.commit()
             response_message = f"Expense of {amount} in category '{category}' added successfully."
-            save_chat_history(current_user, response_message, 'bot', session)
+            await save_chat_history(current_user, response_message, 'bot', session)
             return {"response": response_message}
     
     if intent == "total_expenses":
@@ -113,12 +113,13 @@ def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_sessi
                 Expense.created_at >= start_date,
                 Expense.created_at <= end_date
             )
-        expenses = session.exec(stmt).all()
+        result = await session.execute(stmt)
+        expenses = result.scalars().all()
         total_expenses = sum(e.amount for e in expenses)
 
         
         response_message = f"Your total expenses are {total_expenses}."
-        save_chat_history(current_user, response_message, 'bot', session)
+        await save_chat_history(current_user, response_message, 'bot', session)
         return {"response": response_message}
 
     if intent == "show_expenses":
@@ -130,7 +131,8 @@ def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_sessi
                 Expense.created_at >= start_date,
                 Expense.created_at <= end_date
             )
-        expenses = session.exec(stmt).all()
+        result = await session.execute(stmt)
+        expenses = result.scalars().all()
 
         if not expenses:
             return {"response": "You have no recorded expenses."}
@@ -140,17 +142,17 @@ def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_sessi
         ]
         expenses = "\n".join(lines)
         response_message = f"Your expenses {label}:\n{expenses}"
-        save_chat_history(current_user, response_message, 'bot', session)
+        await save_chat_history(current_user, response_message, 'bot', session)
         return {"response": response_message,}
     
     if intent == "unknown":
         response_message = "unknown"
-        save_chat_history(current_user, response_message, 'bot', session)
+        await save_chat_history(current_user, response_message, 'bot', session)
         return {"response": response_message}
 
     
     response_message = "I'm sorry, I didn't understand that. Please use commands like 'add expense <amount> <category>', 'total', or 'show'."
     
-    save_chat_history(current_user, response_message, 'bot', session)
+    await save_chat_history(current_user, response_message, 'bot', session)
     return {"response": response_message}
 

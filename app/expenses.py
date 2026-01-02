@@ -1,6 +1,6 @@
 from fastapi import APIRouter,Depends,HTTPException
-from sqlmodel import Session,select
-
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession as Session
 
 from .auth import get_current_user
 from .database import get_session
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/expenses")
 
 
 @router.post("/create")
-def create_expense(data:ExpenseCreate,session:Session=Depends(get_session),current_user:int=Depends(get_current_user)):
+async def create_expense(data:ExpenseCreate,session:Session=Depends(get_session),current_user:int=Depends(get_current_user)):
 
     expense = Expense(
         user_id=current_user,
@@ -20,32 +20,35 @@ def create_expense(data:ExpenseCreate,session:Session=Depends(get_session),curre
         category=data.category
     )
     session.add(expense)
-    session.commit()
+    await session.commit()
 
     
     return {"messege":"Expense created"}
 
 @router.get("/get")
-def get_allexpenses(session:Session=Depends(get_session),current_user:int=Depends(get_current_user)):
+async def get_allexpenses(session:Session=Depends(get_session),current_user:int=Depends(get_current_user)):
     user_id = current_user
-    expenses = session.exec(select(Expense).where(Expense.user_id == user_id)).all()
+    result = await session.execute(select(Expense).where(Expense.user_id == user_id))
+    expenses = result.scalars().all()
     return expenses
 
 @router.get("/get/{expense_id}")
-def get_expense(expense_id:int,session:Session=Depends(get_session),current_user:int=Depends(get_current_user)):
-    expense = session.exec(select(Expense).where(Expense.exp_id == expense_id)).first()
+async def get_expense(expense_id:int,session:Session=Depends(get_session),current_user:int=Depends(get_current_user)):
+    result = await session.execute(select(Expense).where(Expense.exp_id == expense_id))
+    expense = result.scalars().first()
     return expense
 
 @router.put("/edit/{expense_id}")
-def edit_expenses(
+async def edit_expenses(
     expense_id:int,
     data:ExpenseCreate,
     session:Session = Depends(get_session),
     current_user:int=Depends(get_current_user)
 ):
-    expense = session.exec(
+    result = await session.execute(
         select(Expense).where(Expense.exp_id==expense_id)
-    ).first()
+    )
+    expense = result.scalars().first()
 
     if not expense:
         raise HTTPException(404,"Expense not found")
@@ -58,20 +61,22 @@ def edit_expenses(
     expense.category = data.category
 
     session.add(expense)
-    session.commit()
-    session.refresh(expense)
+    await session.commit()
+    await session.refresh(expense)
     return {"message": "Expense updated", "expense": expense}
 
 
 @router.delete("/dlt/{expense_id}")
-def delete_expense(
+async def delete_expense(
     expense_id: int,
     session: Session = Depends(get_session),
     current_user: int = Depends(get_current_user)
 ):
-    expense = session.exec(
+    result = await session.execute(
         select(Expense).where(Expense.exp_id == expense_id)
-    ).first()
+    )
+
+    expense = result.scalars().first()
 
     if not expense:
         raise HTTPException(404, "Expense not found")
@@ -80,7 +85,7 @@ def delete_expense(
         raise HTTPException(403, "You cannot delete this expense")
 
     session.delete(expense)
-    session.commit()
+    await session.commit()
 
     return {"message": "Expense deleted"}
 

@@ -18,8 +18,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 @app.on_event("startup")
-def on_startup():
-    create_db()
+async def on_startup():
+    await create_db()
 
 @app.get("/test")
 def test():

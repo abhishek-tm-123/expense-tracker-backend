@@ -1,6 +1,7 @@
 from fastapi import APIRouter,HTTPException,Header,Depends,Request,Response
 from passlib.context import CryptContext
-from sqlmodel import Session,select
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession as Session
 from jose import jwt,JWTError
 from datetime import datetime,timedelta
 import os
@@ -42,18 +43,20 @@ def get_current_user(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid token")
 
 @router.post("/register")
-def register(user:Register,session:Session = Depends(get_session)):
-    exists = session.exec(select(Users).where(Users.email == user.email)).first()
+async def register(user:Register,session:Session = Depends(get_session)):
+    result = await session.execute(select(Users).where(Users.email == user.email))
+    exists = result.scalars().first()
     if exists:
         raise HTTPException(409,"Email already exists")
     new_user = Users(email=user.email,password=pwd.hash(user.password),name=user.name)
     session.add(new_user)
-    session.commit()
+    await session.commit()
     return {"message" : "User created"}
 
 @router.post("/login")
-def login(user: Login,response:Response,session:Session=Depends(get_session)):
-    db_user = session.exec(select(Users).where(Users.email == user.email)).first()
+async def login(user: Login,response:Response,session:Session=Depends(get_session)):
+    result = await session.execute(select(Users).where(Users.email == user.email))
+    db_user = result.scalars().first()
     if not db_user or not pwd.verify(user.password,db_user.password):
         raise HTTPException(401,"Invalid credentials")
     access = create_token({"sub":str(db_user.user_id)},2)
@@ -71,7 +74,7 @@ def login(user: Login,response:Response,session:Session=Depends(get_session)):
     return {"access_token": access}
 
 @router.post("/refresh")
-def refresh_token(request: Request):
+async def refresh_token(request: Request):
     refresh_token = request.cookies.get("refresh_token")
     print(refresh_token)
 
