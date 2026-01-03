@@ -104,7 +104,7 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
     
     if intent == "total_expenses":
 
-        start_date, end_date = parse_date_range(text)
+        start_date, end_date,label = parse_date_range(text)
         
         # db operation to calculate total expenses
         stmt = select(Expense).where(Expense.user_id == current_user)
@@ -118,7 +118,7 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
         total_expenses = sum(e.amount for e in expenses)
 
         
-        response_message = f"Your total expenses are {total_expenses}."
+        response_message = f"Your total expenses are on {label} is {total_expenses}."
         await save_chat_history(current_user, response_message, 'bot', session)
         return {"response": response_message}
 
