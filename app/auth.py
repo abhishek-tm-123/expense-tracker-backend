@@ -66,8 +66,8 @@ async def login(user: Login,response:Response,session:Session=Depends(get_sessio
         key="refresh_token",
         value=refresh,
         httponly=True,
-        secure=False,     # set True when using HTTPS
-        samesite="lax",
+        secure=True,     # set True when using HTTPS
+        samesite="none",
         path="/",
         max_age=60*60*24*7  # 7 days
     )
