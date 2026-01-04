@@ -4,18 +4,21 @@ from sqlmodel import Session,select
 
 from .auth import get_current_user
 from .database import get_session
-from .schemas import chatMessage
+from .schemas import chatMessage,BudgetCreate,BudgetRead
 from .models import Expense,ChatHistory
+from .budget import create_or_update_budget
 
 import joblib
 from pathlib import Path
 from .utils.date_parser import parse_date_range
 
+from datetime import datetime
+
 BASE_DIR = Path(__file__).resolve().parent
 ML_DIR = BASE_DIR / "ml"
 
 # Load the trained model and vectorizer
-intent_model = joblib.load(ML_DIR / "intent_model.pkl")
+intent_model = joblib.load(ML_DIR / "intent_pipeline_v1.pkl")
 vectorizer = joblib.load(ML_DIR / "vectorizer.pkl")
 
 def predict_intent(text: str) -> str:
@@ -75,7 +78,7 @@ def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_sessi
     intent = predict_intent(text)
 
     save_chat_history(current_user, chatmessage.message, 'user', session)
-
+    
    
     if intent == "add_expense":
         # entity extraction (still rule-based)
@@ -94,17 +97,23 @@ def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_sessi
                 user_id=current_user,
                 amount=amount,
                 category=category
+                
             )
             session.add(expense)
             session.commit()
-
+            session.refresh(expense)
             response_message = f"Expense of {amount} in category '{category}' added successfully."
             save_chat_history(current_user, response_message, 'bot', session)
             return {"response": response_message}
     
+    if intent == "set_budget":
+        response_message = "called set budget"
+        save_chat_history(current_user, response_message, 'bot', session)
+        return {"response": response_message}
+
     if intent == "total_expenses":
 
-        start_date, end_date = parse_date_range(text)
+        start_date, end_date,label = parse_date_range(text)
         
         # db operation to calculate total expenses
         stmt = select(Expense).where(Expense.user_id == current_user)
@@ -117,7 +126,7 @@ def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_sessi
         total_expenses = sum(e.amount for e in expenses)
 
         
-        response_message = f"Your total expenses are {total_expenses}."
+        response_message = f"Your total expenses on {label} is {total_expenses}."
         save_chat_history(current_user, response_message, 'bot', session)
         return {"response": response_message}
 
@@ -147,7 +156,8 @@ def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_sessi
         response_message = "unknown"
         save_chat_history(current_user, response_message, 'bot', session)
         return {"response": response_message}
-
+    
+    
     
     response_message = "I'm sorry, I didn't understand that. Please use commands like 'add expense <amount> <category>', 'total', or 'show'."
     

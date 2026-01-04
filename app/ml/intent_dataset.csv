@@ -1,183 +1,322 @@
 text,intent
-add expense 200 food,add_expense
-add expense 500 rent,add_expense
-spent 300 on snacks,add_expense
-spent 150 on travel,add_expense
-i spent 250 on food,add_expense
-i paid 400 for shopping,add_expense
-add 600 fuel,add_expense
-expense 120 snacks,add_expense
-paid 90 for food,add_expense
-today i spent 200 on food,add_expense
-yesterday i spent 300 on travel,add_expense
-i bought groceries for 450,add_expense
-i paid rent 8000,add_expense
-spent 220 on fuel,add_expense
-add food expense 180,add_expense
-add travel expense 900,add_expense
-i spent 75 on snacks,add_expense
-paid 120 for fuel,add_expense
-i spent money on shopping,add_expense
-expense of 350 food,add_expense
-i just spent 500 on rent,add_expense
-add expense of 250 food,add_expense
-spent 100 on snacks today,add_expense
-paid 60 for tea,add_expense
-i paid 700 for groceries,add_expense
-add fuel expense 400,add_expense
-spent 280 shopping,add_expense
-i spent 150 today on food,add_expense
-paid for travel 1200,add_expense
-add shopping expense 999,add_expense
-i used 300 for fuel,add_expense
-expense food 200,add_expense
-add rent expense 8500,add_expense
-spent 50 on snacks,add_expense
-i paid 100 for breakfast,add_expense
-expense travel 600,add_expense
-spent money on food,add_expense
-paid dinner 450,add_expense
-i spent 350 on shopping,add_expense
-add expense 100 fuel,add_expense
-i spent cash on snacks,add_expense
-paid 200 food today,add_expense
-spent 150 fuel yesterday,add_expense
-add expense groceries 500,add_expense
-i paid 90 for snacks,add_expense
-expense of travel 1000,add_expense
-how much did i spend,total_expenses
-how much money did i spend,total_expenses
-total expenses,total_expenses
-what is my total spending,total_expenses
-how much have i spent,total_expenses
-tell me my total expenses,total_expenses
-money spent till now,total_expenses
-total money spent,total_expenses
-how much did i spend today,total_expenses
-how much did i spend yesterday,total_expenses
-how much did i spend last week,total_expenses
-how much did i spend this month,total_expenses
-total expenses this month,total_expenses
-total expenses last month,total_expenses
-how much money went out,total_expenses
-what is my spending,total_expenses
-show total spending,total_expenses
-give me my total,total_expenses
-total expense today,total_expenses
-total expense yesterday,total_expenses
-how much money have i used,total_expenses
-what is my expense total,total_expenses
-how much did i spend so far,total_expenses
-total expenses till now,total_expenses
-calculate my total expenses,total_expenses
-what is total money spent,total_expenses
-total spending this week,total_expenses
-how much was spent this week,total_expenses
-total amount spent,total_expenses
-total cost till now,total_expenses
-what is my expense amount,total_expenses
-how much money did i lose,total_expenses
-total spent amount,total_expenses
-tell me spending total,total_expenses
-what is my overall expense,total_expenses
-total spending report,total_expenses
-how much did i pay in total,total_expenses
-total expenses for this year,total_expenses
-how much did i spend last month,total_expenses
-sum of my expenses,total_expenses
-what is total expense,total_expenses
-how much is my total spending,total_expenses
-total money usage,total_expenses
+paid 120 for tea,add_expense
+spent 450 on groceries,add_expense
+movie tickets cost me 300,add_expense
+i bought snacks for 80,add_expense
+gave 150 for petrol,add_expense
+ordered food online 260,add_expense
+paid electricity bill 900,add_expense
+auto fare was 70,add_expense
+coffee cost 110,add_expense
+bought a notebook for 60,add_expense
+lunch was 180 today,add_expense
+recharged phone for 199,add_expense
+paid gym fees 1200,add_expense
+medicine bill 340,add_expense
+spent money on bus ticket 45,add_expense
+paid rent 8000,add_expense
+movie popcorn 150,add_expense
+got shoes for 2200,add_expense
+haircut cost 120,add_expense
+paid 55 for water bottle,add_expense
+evening snacks 90,add_expense
+pizza order 499,add_expense
+spent 100 on printing,add_expense
+internet bill was 699,add_expense
+cab fare 320,add_expense
+bought charger 350,add_expense
+paid parking fee 40,add_expense
+stationery items 275,add_expense
+ordered groceries worth 860,add_expense
+breakfast outside 140,add_expense
+paid 65 for metro,add_expense
+gift purchase 1200,add_expense
+spent on coffee again 95,add_expense
+mobile cover cost 180,add_expense
+paid hotel bill 2400,add_expense
+movie subscription 299,add_expense
+bought vegetables 210,add_expense
+snacks during travel 130,add_expense
+paid exam fee 500,add_expense
+water bill 320,add_expense
+fuel refill 600,add_expense
+lunch meeting cost 450,add_expense
+evening coffee 90,add_expense
+ordered books 1450,add_expense
+paid internet recharge 239,add_expense
+cab ride home 410,add_expense
+paid toll 85,add_expense
+milk and bread 95,add_expense
+paid for repair 700,add_expense
+new headphones 1800,add_expense
+cinema ticket 260,add_expense
+ice cream 70,add_expense
+paid online course fee 999,add_expense
+bus pass recharge 350,add_expense
+tea with friends 60,add_expense
+late night snacks 110,add_expense
+paid laundry 240,add_expense
+movie rental 150,add_expense
+bought pen drive 650,add_expense
+coffee shop bill 210,add_expense
+paid electricity advance 500,add_expense
+ordered dinner 390,add_expense
+paid for books 980,add_expense
+bike service cost 1200,add_expense
+snacks from store 85,add_expense
+mobile data pack 349,add_expense
+bought umbrella 420,add_expense
+paid entry fee 200,add_expense
+breakfast tiffin 75,add_expense
+grocery refill 560,add_expense
+movie night expense 330,add_expense
+paid subscription renewal 499,add_expense
+juice and snacks 120,add_expense
+paid courier charges 90,add_expense
+canteen lunch 65,add_expense
+coffee while waiting 55,add_expense
+limit should be 5000,set_budget
+i don’t want to spend more than 6000,set_budget
+cap expenses at 7000,set_budget
+keep my budget under 4500,set_budget
+monthly limit is 8000,set_budget
+set spending ceiling to 10000,set_budget
+budget fixed at 5500,set_budget
+don’t allow spending above 3000,set_budget
+make my expense limit 9000,set_budget
+restrict budget to 4000,set_budget
+total spending should stay below 7500,set_budget
+budget needs to be 6000,set_budget
+keep expenses capped at 8200,set_budget
+set a hard limit of 5000,set_budget
+max spending allowed 10000,set_budget
+i want a monthly cap of 7000,set_budget
+don’t cross 6500,set_budget
+budget should not exceed 4800,set_budget
+set limit for this month 9000,set_budget
+keep total under 5500,set_budget
+no spending beyond 3000,set_budget
+my budget is 8500,set_budget
+set expense ceiling at 7200,set_budget
+allow only 4000 spending,set_budget
+monthly budget fixed,set_budget
+budget = 9500,set_budget
+make limit strict 6000,set_budget
+don’t let expenses cross 7800,set_budget
+spending cap 5200,set_budget
+budget target 6800,set_budget
+i want control at 4500,set_budget
+upper limit 8700,set_budget
+total cap 5000,set_budget
+restrict me to 6200,set_budget
+set monthly spending to 7400,set_budget
+keep it under 3900,set_budget
+budget value 8000,set_budget
+no more than 5600,set_budget
+limit expenses tightly at 4700,set_budget
+monthly spending rule 9000,set_budget
+max allowed 10000,set_budget
+budget locked at 6500,set_budget
+set boundary 7200,set_budget
+don’t exceed budget of 4800,set_budget
+hard cap 5300,set_budget
+control spending to 6100,set_budget
+budget range fixed,set_budget
+i choose 7000,set_budget
+monthly limit decided 8200,set_budget
+set spending rule,set_budget
+budget should stay low,set_budget
+cap at 3500,set_budget
+don’t overspend beyond 6000,set_budget
+budget final 7800,set_budget
+monthly ceiling 9000,set_budget
+spend only till 4200,set_budget
+lock budget to 5000,set_budget
+set expense boundary,set_budget
+budget needs control,set_budget
+stop spending after 5500,set_budget
+budget decision made,set_budget
 show my expenses,show_expenses
-list my expenses,show_expenses
+list what i spent,show_expenses
+display all expenses,show_expenses
 what did i spend on,show_expenses
-show expense history,show_expenses
-show all expenses,show_expenses
-show recent expenses,show_expenses
-show today's expenses,show_expenses
-expenses this week,show_expenses
-what expenses do i have,show_expenses
-display expenses,show_expenses
-show expense list,show_expenses
 show spending history,show_expenses
-show where my money went,show_expenses
-list all my spending,show_expenses
-show past expenses,show_expenses
-show last expenses,show_expenses
-show expense records,show_expenses
-show expenses for today,show_expenses
-show expenses for this week,show_expenses
-show expenses for this month,show_expenses
-list recent expenses,show_expenses
-expense list,show_expenses
-show all spending,show_expenses
-show my spending,show_expenses
-display expense list,show_expenses
-show expense details,show_expenses
-show expenses breakdown,show_expenses
-show spending details,show_expenses
-list expenses today,show_expenses
-show expense summary,show_expenses
-show my past expenses,show_expenses
+open expense list,show_expenses
+can i see expenses,show_expenses
+pull my expense records,show_expenses
+show transactions,show_expenses
+display expense details,show_expenses
+i want to review expenses,show_expenses
+show recent expenses,show_expenses
+list spending entries,show_expenses
+show all my spending,show_expenses
+open expense report,show_expenses
+let me see expense data,show_expenses
+display money spent,show_expenses
+show logs of expenses,show_expenses
 what are my expenses,show_expenses
-show expenses yesterday,show_expenses
-show expenses last week,show_expenses
-show expenses last month,show_expenses
-show expense data,show_expenses
-show transaction history,show_expenses
-show money spent,show_expenses
-show spending log,show_expenses
-list spending history,show_expenses
-show expense report,show_expenses
+fetch expense list,show_expenses
+display recent spending,show_expenses
+show expense table,show_expenses
+i need expense breakdown,show_expenses
+show recorded expenses,show_expenses
+show expense summary list,show_expenses
+list expense history,show_expenses
+open spending log,show_expenses
+show all entries,show_expenses
+what have i spent,show_expenses
+show expense information,show_expenses
+get my expenses,show_expenses
+review expense list,show_expenses
+display expenses now,show_expenses
+show spending details,show_expenses
+expense list please,show_expenses
+open spending details,show_expenses
 show expenses till now,show_expenses
-show all my expenses,show_expenses
-what did i buy,show_expenses
-where did my money go,show_expenses
+show my transactions,show_expenses
+list expenses clearly,show_expenses
+display expense records,show_expenses
+show expenses for review,show_expenses
+pull spending info,show_expenses
+show expense activity,show_expenses
+display all spending,show_expenses
+show expense overview,show_expenses
+what expenses are logged,show_expenses
+show my spending history,show_expenses
+list recorded spending,show_expenses
+open expense data,show_expenses
+display expense output,show_expenses
+show expenses list now,show_expenses
+expense history show,show_expenses
+display spending records,show_expenses
+show expense items,show_expenses
+open expense tracker,show_expenses
+list what i paid,show_expenses
+show spending log,show_expenses
+display money usage,show_expenses
+expense list open,show_expenses
 show expense entries,show_expenses
-hello,unknown
-hi,unknown
-hey,unknown
-how are you,unknown
+display spending report,show_expenses
+show expense info,show_expenses
+list my expense data,show_expenses
+what is my total expense,total_expenses
+how much did i spend,total_expenses
+show total spending,total_expenses
+calculate total expenses,total_expenses
+total money spent,total_expenses
+sum of my expenses,total_expenses
+overall spending amount,total_expenses
+what’s the total cost,total_expenses
+tell me total expense,total_expenses
+total spent so far,total_expenses
+expense total,total_expenses
+how much money gone,total_expenses
+total expenditure,total_expenses
+show sum of expenses,total_expenses
+overall expense value,total_expenses
+total amount spent,total_expenses
+calculate spending total,total_expenses
+what’s my expense sum,total_expenses
+give total expense,total_expenses
+total spending figure,total_expenses
+how much have i used,total_expenses
+total expense till now,total_expenses
+expense sum please,total_expenses
+tell overall spending,total_expenses
+what is total spent,total_expenses
+sum expenses now,total_expenses
+total cost incurred,total_expenses
+show expense sum,total_expenses
+money spent total,total_expenses
+final expense amount,total_expenses
+total usage,total_expenses
+spending total so far,total_expenses
+what’s the grand total,total_expenses
+expense calculation,total_expenses
+total expense report,total_expenses
+overall spend,total_expenses
+expense total value,total_expenses
+tell me total spent,total_expenses
+sum of all spending,total_expenses
+expense total summary,total_expenses
+total money usage,total_expenses
+total spend amount,total_expenses
+expense total now,total_expenses
+how much spent overall,total_expenses
+total cost so far,total_expenses
+what’s my total,total_expenses
+expense sum till now,total_expenses
+total money gone,total_expenses
+overall expense sum,total_expenses
+final spending number,total_expenses
+total expense check,total_expenses
+how much did i use,total_expenses
+total used amount,total_expenses
+expense total calculation,total_expenses
+total spend check,total_expenses
+money spent till now,total_expenses
+expense overall total,total_expenses
+total cost summary,total_expenses
+hello there,unknown
 what can you do,unknown
-help me,unknown
 who are you,unknown
 tell me a joke,unknown
+how are you,unknown
 good morning,unknown
-good night,unknown
-thank you,unknown
-thanks,unknown
-ok,unknown
+help me,unknown
+what is this app,unknown
+can you talk,unknown
+random question,unknown
+i’m bored,unknown
+tell me something,unknown
+how does this work,unknown
+explain yourself,unknown
+what features exist,unknown
+hi,unknown
 okay,unknown
 hmm,unknown
-yes,unknown
-no,unknown
-maybe,unknown
-what is this app,unknown
-how does this work,unknown
-can you help,unknown
-open settings,unknown
-logout,unknown
-login,unknown
-profile,unknown
-update profile,unknown
-delete account,unknown
-what is my name,unknown
-who made you,unknown
-tell me something,unknown
-random text here,unknown
-abc xyz,unknown
-lorem ipsum,unknown
-nothing,unknown
-just checking,unknown
+not sure,unknown
+why is this here,unknown
+random text,unknown
+just testing,unknown
+can you hear me,unknown
+what’s going on,unknown
+i don’t know,unknown
+this is weird,unknown
+anyone there,unknown
+say something,unknown
+what now,unknown
+help,unknown
+question,unknown
+tell me info,unknown
+do something,unknown
+random input,unknown
+trial message,unknown
+what is life,unknown
+hey bot,unknown
+say hi,unknown
 test message,unknown
-hello bot,unknown
+what is your name,unknown
 are you real,unknown
-what time is it,unknown
-date today,unknown
-weather today,unknown
-news today,unknown
-who is prime minister,unknown
-play music,unknown
-open youtube,unknown
-call mom,unknown
-send message,unknown
+ping,unknown
+check check,unknown
+system test,unknown
+does this work,unknown
+unknown command,unknown
+just typing,unknown
+why not,unknown
+whatever,unknown
+confused,unknown
+nothing important,unknown
+can you help me,unknown
+hello?,unknown
+any response,unknown
+surprise me,unknown
+say anything,unknown
+input test,unknown
+random words here,unknown
+noise text,unknown
+try again,unknown
+checking system,unknown
+message test,unknown
+bot hello,unknown
