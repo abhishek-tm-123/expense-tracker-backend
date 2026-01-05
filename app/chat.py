@@ -4,18 +4,21 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession as Session
 from .auth import get_current_user
 from .database import get_session
-from .schemas import chatMessage
+from .schemas import chatMessage,BudgetCreate,BudgetRead
 from .models import Expense,ChatHistory
+from .budget import create_or_update_budget
 
 import joblib
 from pathlib import Path
 from .utils.date_parser import parse_date_range
 
+from datetime import datetime
+
 BASE_DIR = Path(__file__).resolve().parent
 ML_DIR = BASE_DIR / "ml"
 
 # Load the trained model and vectorizer
-intent_model = joblib.load(ML_DIR / "intent_model.pkl")
+intent_model = joblib.load(ML_DIR / "intent_pipeline_v1.pkl")
 vectorizer = joblib.load(ML_DIR / "vectorizer.pkl")
 
 def predict_intent(text: str) -> str:
@@ -95,6 +98,7 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
                 user_id=current_user,
                 amount=amount,
                 category=category
+                
             )
             session.add(expense)
             await session.commit()
@@ -102,6 +106,11 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
             await save_chat_history(current_user, response_message, 'bot', session)
             return {"response": response_message}
     
+    if intent == "set_budget":
+        response_message = "called set budget"
+        await save_chat_history(current_user, response_message, 'bot', session)
+        return {"response": response_message}
+
     if intent == "total_expenses":
 
         start_date, end_date,label = parse_date_range(text)
@@ -149,7 +158,8 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
         response_message = "unknown"
         await save_chat_history(current_user, response_message, 'bot', session)
         return {"response": response_message}
-
+    
+    
     
     response_message = "I'm sorry, I didn't understand that. Please use commands like 'add expense <amount> <category>', 'total', or 'show'."
     

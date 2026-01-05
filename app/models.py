@@ -30,3 +30,13 @@ class ChatHistory(SQLModel, table=True):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
     user: Optional[Users] = Relationship()
+
+class Budget(SQLModel, table=True):
+    budget_id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.user_id")
+    category: Optional[str]  = Field(default=None, index=True)
+    amount: float = Field(gt=0)
+    month: int = Field(ge=1, le=12)
+    year: int = Field(ge=2000)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
