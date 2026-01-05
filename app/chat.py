@@ -63,7 +63,7 @@ async def clear_chat(
     chats = result.scalars().all()
 
     for chat in chats:
-        session.delete(chat)
+        await session.delete(chat)
 
     await session.commit()
 
