@@ -8,6 +8,7 @@ class Users(SQLModel, table=True):
     name: str
     email: str = Field(index=True, unique=True)
     password: str
+    profile_image: Optional[str] = Field(default=None)
    
     expenses: List["Expense"] = Relationship(back_populates="user")
 

@@ -28,7 +28,7 @@ def predict_intent(text: str) -> str:
     intent = intent_model.classes_[probs.argmax()]
     print(f"\n\n\nPredicted intent: {intent}\n with confidence {confidence}\n prob {probs}\n\n\n")
     if confidence < 0.3:
-        return "unknown"
+        return "error"
     return intent
 
 router = APIRouter(prefix="/chat")
@@ -153,10 +153,27 @@ def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_sessi
         return {"response": response_message,}
     
     if intent == "unknown":
-        response_message = "unknown"
+        response_message = (
+            "Hey 👋 I'm your personal finance assistant.\n\n"
+            "Here’s what I can help you with:\n"
+            "• Add expenses (example: `add expense 250 food`)\n"
+            "• Show expenses (example: `show expenses today`, `show expenses last month`)\n"
+            "• Calculate total spending (example: `total expenses this week`)\n"
+            "• Set or update budgets (example: `set budget 5000 food`)\n\n"
+            "Tell me what you want to do."
+            )
+    
         save_chat_history(current_user, response_message, 'bot', session)
         return {"response": response_message}
     
+    if intent == "error":
+        response_message = (
+            "I'm sorry, I didn't understand that. Please use commands like 'add expense <amount> <category>', 'total', or 'show'."
+            )
+        save_chat_history(current_user, response_message, 'bot', session)
+        return {"response": response_message}
+        
+
     
     
     response_message = "I'm sorry, I didn't understand that. Please use commands like 'add expense <amount> <category>', 'total', or 'show'."
