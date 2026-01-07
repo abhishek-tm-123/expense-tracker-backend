@@ -26,7 +26,7 @@ async def update_profile(
     session: Session = Depends(get_session),
     current_user_id: int = Depends(get_current_user)
 ):
-    result = await session.exec(select(Users).where(Users.user_id == current_user_id))
+    result = await session.execute(select(Users).where(Users.user_id == current_user_id))
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -35,7 +35,7 @@ async def update_profile(
         user.name = name
         
     if email is not None and email != user.email:
-        result = await session.exec(select(Users).where(Users.email == email))
+        result = await session.execute(select(Users).where(Users.email == email))
         existing_user = result.scalars().first()
         if existing_user:
             raise HTTPException(status_code=409, detail="Email already in use")
