@@ -39,3 +39,7 @@ Thumbs.db
 # ---- Logs ----
 *.log
 logs/
+
+# ---- Static Files ----
+app/static/profile_images/*
+!app/static/profile_images/.gitkeep

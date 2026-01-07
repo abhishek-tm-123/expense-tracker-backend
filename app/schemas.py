@@ -10,6 +10,10 @@ class Register(BaseModel):
 class Login(BaseModel):
     email:str
     password:str
+    
+class UpdateProfile(BaseModel):
+    name: str | None = None
+    email: str | None = None
 
 class ExpenseCreate(BaseModel):
     title:str
