@@ -71,22 +71,35 @@ def login(user: Login,response:Response,session:Session=Depends(get_session)):
     return {"access_token": access}
 
 @router.post("/refresh")
-def refresh_token(request: Request):
+def refresh_token(request: Request, session: Session = Depends(get_session)):
+    print(f"DEBUG: Cookies keys received: {request.cookies.keys()}")
     refresh_token = request.cookies.get("refresh_token")
-    print(refresh_token)
-
+    
     if not refresh_token:
+        print("DEBUG: Refresh token cookie is MISSING")
         raise HTTPException(401, "Refresh token missing")
 
     try:
         payload = jwt.decode(refresh_token, SECRET, algorithms=[ALGO])
         user_id = payload.get("sub")
+        
+        if user_id is None:
+             print("DEBUG: Token payload invalid (no sub)")
+             raise HTTPException(401, "Invalid token payload")
+
+        # Verify user exists in DB
+        user = session.get(Users, int(user_id))
+        if not user:
+            print(f"DEBUG: User {user_id} not found in DB")
+            raise HTTPException(401, "User no longer exists")
 
         new_access = create_token({"sub": str(user_id)}, 2)
+        print("DEBUG: Token refreshed successfully")
 
-        return {"access_token": new_access,"verthe" : payload}
+        return {"access_token": new_access}
 
     except JWTError as e:
+        print(f"DEBUG: JWT Error: {str(e)}")
         if "Signature has expired" in str(e):
             raise HTTPException(401, "Refresh token expired")
         raise HTTPException(401, "Invalid refresh token")
