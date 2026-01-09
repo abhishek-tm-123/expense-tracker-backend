@@ -238,7 +238,6 @@ overall spend,total_expenses
 expense total value,total_expenses
 tell me total spent,total_expenses
 sum of all spending,total_expenses
-expense total summary,total_expenses
 total money usage,total_expenses
 total spend amount,total_expenses
 expense total now,total_expenses
@@ -320,3 +319,41 @@ try again,unknown
 checking system,unknown
 message test,unknown
 bot hello,unknown
+spent 200 on lunch,add_expense
+bought coffee for 150,add_expense
+paid 500 for petrol,add_expense
+ordered pizza 599,add_expense
+snack break cost 80,add_expense
+membership fee 1200,add_expense
+bought a book 450,add_expense
+grocery shopping 1200,add_expense
+paid for wifi 999,add_expense
+bus fare 40,add_expense
+parking charge 50,add_expense
+lunch with friends 800,add_expense
+bought milk and bread 120,add_expense
+electric bill 1500,add_expense
+water bill paid 400,add_expense
+gym subscription 2000,add_expense
+how much did i spend yesterday,total_expenses
+total expense today,total_expenses
+what's my total for this week,total_expenses
+total spending last month,total_expenses
+show total expenses,total_expenses
+calculate my total spend,total_expenses
+sum of my spending today,total_expenses
+total money spent this month,total_expenses
+show my spending from last week,show_expenses
+list my expenses today,show_expenses
+what are my expenses for this month,show_expenses
+display transactions from yesterday,show_expenses
+show me all spending entries,show_expenses
+pull up my expense history,show_expenses
+show expenses for last month,show_expenses
+set a limit of 5000 for food,set_budget
+budget for shopping 2000,set_budget
+keep my travel budget under 3000,set_budget
+set monthly budget to 20000,set_budget
+limit my snacks spending to 500,set_budget
+want to set a budget,set_budget
+define spending limit,set_budget

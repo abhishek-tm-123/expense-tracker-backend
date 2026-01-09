@@ -1,38 +1,65 @@
 import pandas as pd
 import joblib
-
+import re
+import nltk
+from nltk.stem import WordNetLemmatizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix
+from sklearn.calibration import CalibratedClassifierCV
+from pathlib import Path
+
+# Ensure NLTK data is available
+try:
+    nltk.download('wordnet', quiet=True)
+    nltk.download('omw-1.4', quiet=True)
+except Exception:
+    pass
+
+lemmatizer = WordNetLemmatizer()
+
+def preprocess_text(text):
+    # Lowercase, remove special chars, and lemmatize
+    text = text.lower()
+    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
+    tokens = text.split()
+    lemmatized = [lemmatizer.lemmatize(w) for w in tokens]
+    return " ".join(lemmatized)
+
+BASE_DIR = Path(__file__).resolve().parent
 
 # Load data
-df = pd.read_csv("intent_dataset.csv")
+df = pd.read_csv(BASE_DIR / "intent_dataset.csv")
 
-X = df["text"]
+# Preprocess all text
+df['processed_text'] = df['text'].apply(preprocess_text)
+
+X = df["processed_text"]
 y = df["intent"]
 
-# Pipeline (THIS MATTERS)
+# Pipeline
+# Note: We use the base model inside CalibratedClassifierCV
+base_clf = LogisticRegression(
+    max_iter=1000,
+    class_weight="balanced"
+)
+
+calibrated_clf = CalibratedClassifierCV(base_clf, cv=5, method='sigmoid')
+
 pipeline = Pipeline([
     (
         "vectorizer",
         TfidfVectorizer(
-            lowercase=True,
-            ngram_range=(1, 2),   # BIG DEAL
+            ngram_range=(1, 2),
             min_df=1,
             max_df=0.9
         )
     ),
     (
         "clf",
-        LogisticRegression(
-            max_iter=1000,
-            class_weight="balanced"  # IMPORTANT
-        )
+        calibrated_clf
     )
 ])
 
@@ -47,14 +74,7 @@ pipeline.fit(X_train, y_train)
 y_pred = pipeline.predict(X_test)
 print(classification_report(y_test, y_pred))
 
-# Save model + vectorizer
-joblib.dump(pipeline.named_steps["clf"], "intent_pipeline_v1.pkl")
-joblib.dump(pipeline.named_steps["vectorizer"], "vectorizer.pkl")
+# Save model
+joblib.dump(pipeline, BASE_DIR / "intent_pipeline_v1.pkl")
 
-cm = confusion_matrix(y_test, y_pred, labels=pipeline.classes_)
-sns.heatmap(cm, annot=True, fmt="d",
-            xticklabels=pipeline.classes_,
-            yticklabels=pipeline.classes_)
-plt.show()
-
-print("✅ Model trained and saved")
+print("Model trained with Lemmatization and Calibration saved.")

@@ -90,7 +90,7 @@ async def refresh_token(request: Request,session:Session=Depends(get_session)):
              raise HTTPException(401, "Invalid token payload")
 
         # Verify user exists in DB
-        user = session.get(Users, int(user_id))
+        user = await session.get(Users, int(user_id))
         if not user:
             print(f"DEBUG: User {user_id} not found in DB")
             raise HTTPException(401, "User no longer exists")
