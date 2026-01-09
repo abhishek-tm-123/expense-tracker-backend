@@ -74,7 +74,7 @@ async def login(user: Login,response:Response,session:Session=Depends(get_sessio
     return {"access_token": access}
 
 @router.post("/refresh")
-async def refresh_token(request: Request):
+async def refresh_token(request: Request,session:Session=Depends(get_session)):
     refresh_token = request.cookies.get("refresh_token")
     
     if not refresh_token:
