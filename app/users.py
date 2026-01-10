@@ -6,7 +6,18 @@ from sqlmodel.ext.asyncio.session import AsyncSession as Session
 from app.models import Users
 from .auth import get_current_user
 from .database import get_session
-from .schemas import UpdateProfile
+
+import cloudinary
+import cloudinary.uploader
+from fastapi.concurrency import run_in_threadpool
+import os
+
+cloudinary.config(
+    cloud_name="dnkkkrerz",
+    api_key="391655656674467",
+    api_secret="**********",
+    secure=True
+)
 
 router = APIRouter(prefix="/user")
 
@@ -42,22 +53,14 @@ async def update_profile(
         user.email = email
     
     if profile_image:
-        import shutil
-        import os
-        from uuid import uuid4
-        
-        # Generate unique filename to avoid collisions
-        file_ext = os.path.splitext(profile_image.filename)[1]
-        filename = f"{uuid4()}{file_ext}"
-        file_path = f"app/static/profile_images/{filename}"
-        
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(profile_image.file, buffer)
-            
-        # Store relative path or full URL. Here storing relative path served by static mount
-        # Assuming domain is handled by frontend, or we can return full URL. 
-        # Let's return the static path like /static/profile_images/...
-        user.profile_image = f"/static/profile_images/{filename}"
+        # 1. Upload to Cloudinary using run_in_threadpool (since SDK is blocking)
+        # We pass profile_image.file directly to the uploader
+        upload_result = await run_in_threadpool(
+            cloudinary.uploader.upload, 
+            profile_image.file,
+            folder="profile_images" # Organizes your Cloudinary media library
+        )
+        user.profile_image = upload_result.get("url")
         
     await session.commit()
     await session.refresh(user)
