@@ -8,6 +8,18 @@ from .auth import get_current_user, pwd
 from .database import get_session
 from .schemas import ChangePassword
 
+import cloudinary
+import cloudinary.uploader
+from fastapi.concurrency import run_in_threadpool
+import os
+
+cloudinary.config(
+    cloud_name="dnkkkrerz",
+    api_key="391655656674467",
+    api_secret="bVtI8VxVqW4ZLLuZGlFBfycGujM",
+    secure=True
+)
+
 router = APIRouter(prefix="/user")
 
 @router.get("/me")
@@ -67,22 +79,14 @@ async def update_profile(
         user.email = email
     
     if profile_image:
-        import shutil
-        import os
-        from uuid import uuid4
-        
-        # Generate unique filename to avoid collisions
-        file_ext = os.path.splitext(profile_image.filename)[1]
-        filename = f"{uuid4()}{file_ext}"
-        file_path = f"app/static/profile_images/{filename}"
-        
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(profile_image.file, buffer)
-            
-        # Store relative path or full URL. Here storing relative path served by static mount
-        # Assuming domain is handled by frontend, or we can return full URL. 
-        # Let's return the static path like /static/profile_images/...
-        user.profile_image = f"/static/profile_images/{filename}"
+        # 1. Upload to Cloudinary using run_in_threadpool (since SDK is blocking)  
+        # We pass profile_image.file directly to the uploader
+        upload_result = await run_in_threadpool(
+            cloudinary.uploader.upload,
+            profile_image.file,
+            folder="profile_images" # Organizes your Cloudinary media library      
+        )
+        user.profile_image = upload_result.get("secure_url")
         
     session.add(user)
     await session.commit()
@@ -99,18 +103,38 @@ async def delete_current_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # 1. Delete profile image from disk if it exists
+    # 1. Delete profile image from Cloudinary if it exists
     if user.profile_image:
-        import os
-        # user.profile_image is like "/static/profile_images/uuid.ext"
-        relative_path = user.profile_image.lstrip("/")
-        if relative_path.startswith("static/"):
-            physical_path = os.path.join("app", relative_path)
-            if os.path.exists(physical_path):
-                try:
-                    os.remove(physical_path)
-                except Exception as e:
-                    print(f"Error deleting profile image: {e}")
+        try:
+            # Extract public_id from Cloudinary URL
+            # URL format: https://res.cloudinary.com/{cloud_name}/image/upload/{version}/{public_id}.{format}
+            # Example: https://res.cloudinary.com/dnkkkrerz/image/upload/v1234567890/profile_images/abc123.jpg
+            # public_id would be: profile_images/abc123
+            
+            if "cloudinary.com" in user.profile_image:
+                # Split URL and extract public_id
+                parts = user.profile_image.split("/upload/")
+                if len(parts) > 1:
+                    # Get everything after /upload/, remove version if present
+                    path_with_version = parts[1]
+                    # Remove version (v1234567890/) if present
+                    if path_with_version.startswith("v"):
+                        path_parts = path_with_version.split("/", 1)
+                        if len(path_parts) > 1:
+                            public_id_with_ext = path_parts[1]
+                        else:
+                            public_id_with_ext = path_with_version
+                    else:
+                        public_id_with_ext = path_with_version
+                    
+                    # Remove file extension
+                    public_id = os.path.splitext(public_id_with_ext)[0]
+                    
+                    # Delete from Cloudinary
+                    await run_in_threadpool(cloudinary.uploader.destroy, public_id)
+                    print(f"✓ Deleted image from Cloudinary: {public_id}")
+        except Exception as e:
+            print(f"⚠ Error deleting profile image from Cloudinary: {e}")
 
     # 2. Delete user (cascading handles DB related data)
     await session.delete(user)
