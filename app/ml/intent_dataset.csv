@@ -357,3 +357,23 @@ set monthly budget to 20000,set_budget
 limit my snacks spending to 500,set_budget
 want to set a budget,set_budget
 define spending limit,set_budget
+what is my budget,show_budget
+show my budget,show_budget
+check my budget,show_budget
+how much budget i have,show_budget
+budget status,show_budget
+display budget,show_budget
+can i see my budget,show_budget
+tell me my budget,show_budget
+show budget for food,show_budget
+what is my food budget,show_budget
+check travel budget,show_budget
+how much left in my budget,show_budget
+budget overview,show_budget
+my budget details,show_budget
+list all budgets,show_budget
+show me my limits,show_budget
+show spending limits,show_budget
+what are my budget categories,show_budget
+pull up budget info,show_budget
+budget check,show_budget

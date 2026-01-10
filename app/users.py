@@ -5,7 +5,8 @@ from sqlmodel import Session,select
 from app.models import Users
 from .auth import get_current_user
 from .database import get_session
-from .schemas import UpdateProfile
+from .schemas import UpdateProfile, ChangePassword
+from .auth import pwd
 
 router = APIRouter(prefix="/user")
 
@@ -15,6 +16,30 @@ def read_current_user(session:Session=Depends(get_session),current_user:int=Depe
     if not user:
         raise HTTPException(404,"User not found")
     return {"name": user.name, "email": user.email, "profile_image": user.profile_image}
+
+
+@router.post("/change-password")
+def change_password(
+    data: ChangePassword,
+    session: Session = Depends(get_session),
+    current_user_id: int = Depends(get_current_user)
+):
+    user = session.exec(select(Users).where(Users.user_id == current_user_id)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # 1. Verify old password
+    if not pwd.verify(data.old_password, user.password):
+        raise HTTPException(status_code=400, detail="Current password incorrect")
+    
+    # 2. Update with new hashed password
+    user.password = pwd.hash(data.new_password)
+    
+    session.add(user)
+    session.commit()
+    
+    return {"message": "Password changed successfully"}
+
 
 @router.put("/profile")
 def update_profile(
@@ -59,3 +84,31 @@ def update_profile(
     session.commit()
     session.refresh(user)
     return {"name": user.name, "email": user.email, "profile_image": user.profile_image}
+
+@router.delete("/me")
+def delete_current_user(
+    session: Session = Depends(get_session),
+    current_user_id: int = Depends(get_current_user)
+):
+    user = session.exec(select(Users).where(Users.user_id == current_user_id)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # 1. Delete profile image from disk if it exists
+    if user.profile_image:
+        import os
+        # user.profile_image is like "/static/profile_images/uuid.ext"
+        relative_path = user.profile_image.lstrip("/")
+        if relative_path.startswith("static/"):
+            physical_path = os.path.join("app", relative_path)
+            if os.path.exists(physical_path):
+                try:
+                    os.remove(physical_path)
+                except Exception as e:
+                    print(f"Error deleting profile image: {e}")
+
+    # 2. Delete user (cascading handles DB related data)
+    session.delete(user)
+    session.commit()
+    
+    return {"message": "Account and all associated data deleted successfully"}
