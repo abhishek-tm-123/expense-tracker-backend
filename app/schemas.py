@@ -40,4 +40,8 @@ class BudgetRead(BaseModel):
     amount: float
     month: int
     year: int
+
+class ChangePassword(BaseModel):
+    old_password: str
+    new_password: str
     
