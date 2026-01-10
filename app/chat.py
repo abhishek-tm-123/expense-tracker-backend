@@ -14,9 +14,16 @@ from .schemas import chatMessage
 from .utils.entity_extractor import extract_entities, get_professional_response
 from .utils.expense_parser import process_expense
 
-# Load ML model
+# Load ML model with error handling
 model_path = Path(__file__).parent / "ml" / "intent_model.pkl"
-intent_pipeline = joblib.load(model_path)
+intent_pipeline = None
+try:
+    intent_pipeline = joblib.load(model_path)
+    print("✓ ML intent model loaded successfully")
+except FileNotFoundError:
+    print("⚠ Warning: ML model not found. Using rule-based intent detection.")
+except Exception as e:
+    print(f"⚠ Warning: Could not load ML model: {e}. Using rule-based intent detection.")
 
 # Initialize lemmatizer
 try:
@@ -36,19 +43,57 @@ def preprocess_text(text: str) -> str:
     lemmatized = [lemmatizer.lemmatize(word) for word in words]
     return " ".join(lemmatized)
 
-def predict_intent(text: str) -> dict:
-    processed = preprocess_text(text)
-    probs = intent_pipeline.predict_proba([processed])[0]
-    intent_idx = probs.argmax()
-
-    intent = intent_pipeline.classes_[intent_idx]
-    confidence = probs[intent_idx]
+def predict_intent_rule_based(text: str) -> dict:
+    """Rule-based intent detection fallback when ML model is unavailable."""
+    text_lower = text.lower()
     
+    # Initialize all intents with low probability
+    intents = ["add_expense", "show_expenses", "total_expenses", "set_budget", "show_budget", "unknown"]
+    probs = {intent: 0.1 for intent in intents}
+    
+    # Rule-based detection
+    if any(word in text_lower for word in ["spent", "paid", "bought", "purchased"]):
+        probs["add_expense"] = 0.8
+    elif any(word in text_lower for word in ["show", "list", "view"]):
+        if "budget" in text_lower:
+            probs["show_budget"] = 0.7
+        else:
+            probs["show_expenses"] = 0.7
+    elif any(word in text_lower for word in ["total", "sum", "how much"]):
+        probs["total_expenses"] = 0.7
+    elif any(word in text_lower for word in ["set", "limit", "budget"]) and "budget" in text_lower:
+        probs["set_budget"] = 0.7
+    else:
+        probs["unknown"] = 0.6
+    
+    intent = max(probs, key=probs.get)
     return {
         "intent": intent,
-        "confidence": confidence,
-        "probs": dict(zip(intent_pipeline.classes_, probs))
+        "confidence": probs[intent],
+        "probs": probs
     }
+
+def predict_intent(text: str) -> dict:
+    """Predict intent using ML model or rule-based fallback."""
+    if intent_pipeline is None:
+        return predict_intent_rule_based(text)
+    
+    try:
+        processed = preprocess_text(text)
+        probs = intent_pipeline.predict_proba([processed])[0]
+        intent_idx = probs.argmax()
+
+        intent = intent_pipeline.classes_[intent_idx]
+        confidence = probs[intent_idx]
+        
+        return {
+            "intent": intent,
+            "confidence": confidence,
+            "probs": dict(zip(intent_pipeline.classes_, probs))
+        }
+    except Exception as e:
+        print(f"ML prediction failed: {e}, using rule-based fallback")
+        return predict_intent_rule_based(text)
 
 router = APIRouter(prefix="/chat")
 
