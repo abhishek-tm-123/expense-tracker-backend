@@ -1,13 +1,8 @@
-from fastapi import APIRouter,Depends,HTTPException
-<<<<<<< HEAD
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession as Session
-
-from datetime import datetime, timedelta
-=======
-from sqlmodel import Session,select
 from datetime import datetime, timedelta, time
->>>>>>> working-branch
+
 from .auth import get_current_user
 from .database import get_session
 from .models import Expense, Budget
@@ -48,16 +43,10 @@ async def get_dashboard(
     session: Session = Depends(get_session),
     current_user: int = Depends(get_current_user)
 ):
-<<<<<<< HEAD
-    start_date, end_date = get_date_range(range)
-
-    result = await session.execute(
-=======
     start_dt, end_dt = get_date_range(range, start_date, end_date)
     
     # Current period expenses
-    expenses = session.exec(
->>>>>>> working-branch
+    result = await session.execute(
         select(Expense).where(
             Expense.user_id == current_user,
             Expense.created_at >= start_dt,
@@ -71,13 +60,14 @@ async def get_dashboard(
     prev_start_date = start_dt - timedelta(days=period_days)
     prev_end_date = start_dt - timedelta(seconds=1)
     
-    prev_expenses = session.exec(
+    prev_result = await session.execute(
         select(Expense).where(
             Expense.user_id == current_user,
             Expense.created_at >= prev_start_date,
             Expense.created_at <= prev_end_date
         )
-    ).all()
+    )
+    prev_expenses = prev_result.scalars().all()
     
     prev_total = sum(e.amount for e in prev_expenses)
     current_total = sum(e.amount for e in expenses)
@@ -93,22 +83,24 @@ async def get_dashboard(
     start_of_month = datetime(year, month, 1)
     
     # 1. Fetch all monthly expenses for budget checking
-    monthly_expenses = session.exec(
+    monthly_result = await session.execute(
         select(Expense).where(
             Expense.user_id == current_user,
             Expense.created_at >= start_of_month
         )
-    ).all()
+    )
+    monthly_expenses = monthly_result.scalars().all()
     monthly_total = sum(e.amount for e in monthly_expenses)
     
     # 2. Fetch budgets
-    budgets = session.exec(
+    budgets_result = await session.execute(
         select(Budget).where(
             Budget.user_id == current_user,
             Budget.month == month,
             Budget.year == year
         )
-    ).all()
+    )
+    budgets = budgets_result.scalars().all()
 
     return build_dashboard_response(expenses, monthly_expenses, budgets, start_dt, end_dt, change_percent)
 

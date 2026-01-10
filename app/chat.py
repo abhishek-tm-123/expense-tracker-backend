@@ -1,5 +1,4 @@
 import joblib
-import re
 import nltk
 from nltk.stem import WordNetLemmatizer
 from pathlib import Path
@@ -10,35 +9,32 @@ from sqlmodel.ext.asyncio.session import AsyncSession as Session
 
 from .auth import get_current_user
 from .database import get_session
-from .schemas import chatMessage
 from .models import Expense, ChatHistory, Budget
+from .schemas import chatMessage
 from .utils.entity_extractor import extract_entities, get_professional_response
 from .utils.expense_parser import process_expense
 
-# Ensure NLTK data is available
+# Load ML model
+model_path = Path(__file__).parent / "ml" / "intent_model.pkl"
+intent_pipeline = joblib.load(model_path)
+
+# Initialize lemmatizer
 try:
+    lemmatizer = WordNetLemmatizer()
+    lemmatizer.lemmatize("test")
+except LookupError:
     nltk.download('wordnet', quiet=True)
     nltk.download('omw-1.4', quiet=True)
-except Exception:
-    pass
+    lemmatizer = WordNetLemmatizer()
 
-lemmatizer = WordNetLemmatizer()
+CONFIDENCE_THRESHOLD = 0.5
 
-def preprocess_text(text):
-    # Lowercase, remove special chars, and lemmatize
-    text = text.lower()
-    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
-    tokens = text.split()
-    lemmatized = [lemmatizer.lemmatize(w) for w in tokens]
+def preprocess_text(text: str) -> str:
+    """Preprocess text with lemmatization for better intent matching."""
+    lemmatizer = WordNetLemmatizer()
+    words = text.lower().split()
+    lemmatized = [lemmatizer.lemmatize(word) for word in words]
     return " ".join(lemmatized)
-
-BASE_DIR = Path(__file__).resolve().parent
-ML_DIR = BASE_DIR / "ml"
-
-# Load the trained model and vectorizer
-intent_pipeline = joblib.load(ML_DIR / "intent_pipeline_v1.pkl")
-
-CONFIDENCE_THRESHOLD = 0.5  # start conservative
 
 def predict_intent(text: str) -> dict:
     processed = preprocess_text(text)
@@ -93,10 +89,6 @@ async def handle_add_expense(entities, user_id, session: Session):
         category=entities["category"]
     )
     session.add(expense)
-<<<<<<< HEAD
-    await session.commit()
-    return get_professional_response("add_expense", entities, success=True)
-=======
     
     # --- BUDGET WARNING LOGIC ---
     now = datetime.now()
@@ -108,7 +100,8 @@ async def handle_add_expense(entities, user_id, session: Session):
         Expense.user_id == user_id,
         Expense.created_at >= start_of_month
     )
-    all_expenses = session.exec(stmt_spent).all()
+    result = await session.execute(stmt_spent)
+    all_expenses = result.scalars().all()
     total_spent = sum(e.amount for e in all_expenses)
     
     # 2. Category spending
@@ -121,7 +114,8 @@ async def handle_add_expense(entities, user_id, session: Session):
         Budget.month == month, 
         Budget.year == year
     )
-    budgets = session.exec(stmt_budgets).all()
+    result_budgets = await session.execute(stmt_budgets)
+    budgets = result_budgets.scalars().all()
     
     for b in budgets:
         # Check specific category budget
@@ -138,9 +132,8 @@ async def handle_add_expense(entities, user_id, session: Session):
             elif total_spent > b.amount * 0.9:
                 warning = f"Approaching overall monthly budget limit. (₹{total_spent}/₹{b.amount})"
 
-    session.commit()
+    await session.commit()
     return get_professional_response("add_expense", entities, success=True, warning=warning)
->>>>>>> working-branch
 
 async def handle_total_expenses(entities, user_id, session: Session):
     stmt = select(Expense).where(Expense.user_id == user_id)
@@ -161,60 +154,69 @@ async def handle_show_expenses(entities, user_id, session: Session):
     expenses = result.scalars().all()
     return get_professional_response("show_expenses", entities, data={"expenses": expenses})
 
-def handle_set_budget(entities, user_id, session):
+async def handle_set_budget(entities, user_id, session: Session):
     if not entities["amount"]:
         return get_professional_response("set_budget", entities, success=False)
     
     now = datetime.now()
-    month = now.month
-    year = now.year
+    month, year = now.month, now.year
     
-    # In a more advanced version, we could extract month/year from entities
-    # For now, we default to the current month/year.
-    
-    statement = select(Budget).where(
+    # Check if budget already exists
+    stmt = select(Budget).where(
         Budget.user_id == user_id,
         Budget.category == entities["category"],
         Budget.month == month,
-        Budget.year == year,
+        Budget.year == year
     )
-    budget = session.exec(statement).first()
-
-    if budget:
-        budget.amount = entities["amount"]
+    result = await session.execute(stmt)
+    existing_budget = result.scalars().first()
+    
+    if existing_budget:
+        existing_budget.amount = entities["amount"]
     else:
         budget = Budget(
             user_id=user_id,
             category=entities["category"],
             amount=entities["amount"],
             month=month,
-            year=year,
+            year=year
         )
         session.add(budget)
     
-    session.commit()
+    await session.commit()
     return get_professional_response("set_budget", entities, success=True)
 
-def handle_show_budget(entities, user_id, session):
+async def handle_show_budget(entities, user_id, session: Session):
     now = datetime.now()
     month, year = now.month, now.year
     
-    stmt = select(Budget).where(Budget.user_id == user_id, Budget.month == month, Budget.year == year)
-    if entities["category"]:
-        stmt = stmt.where(Budget.category == entities["category"])
+    # Get budgets
+    stmt = select(Budget).where(
+        Budget.user_id == user_id,
+        Budget.month == month,
+        Budget.year == year
+    )
+    result = await session.execute(stmt)
+    budgets = result.scalars().all()
     
-    budgets = session.exec(stmt).all()
+    if not budgets:
+        return get_professional_response("show_budget", entities, data={"budgets": []})
     
-    # Calculate spending for those budgets
+    # Get monthly spending
     start_of_month = datetime(year, month, 1)
-    stmt_spent = select(Expense).where(Expense.user_id == user_id, Expense.created_at >= start_of_month)
-    expenses = session.exec(stmt_spent).all()
+    stmt_expenses = select(Expense).where(
+        Expense.user_id == user_id,
+        Expense.created_at >= start_of_month
+    )
+    result_expenses = await session.execute(stmt_expenses)
+    expenses = result_expenses.scalars().all()
     
+    # Calculate spending per category
     spent_map = {}
-    # Categorized spending
-    for cat in set(e.category for e in expenses):
-        spent_map[cat] = sum(e.amount for e in expenses if e.category == cat)
-    # Overall spending (None key)
+    for e in expenses:
+        spent_map[e.category] = spent_map.get(e.category, 0) + e.amount
+    
+    # Overall spending
     spent_map[None] = sum(e.amount for e in expenses)
     
     return get_professional_response("show_budget", entities, data={"budgets": budgets, "spent_map": spent_map})
@@ -232,19 +234,11 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
         result = predict_intent(text)
         probs = result["probs"]  # Dictionary of intent -> probability
         
-<<<<<<< HEAD
-        # --- HYBRID BOOSTING LOGIC ---
-        if intent == "add_expense" and entities["amount"] and entities["category"]:
-            confidence += 0.3
-        elif intent in ["total_expenses", "show_expenses"] and entities["date_label"] != "overall":
-            confidence += 0.2
-=======
         # Apply Boosts to probabilities
         # Add Expense Boost
         expense_verbs = ["spent", "paid", "bought", "purchased", "went", "ate", "had", "visit"]
         if any(word in text.lower() for word in expense_verbs):
             probs["add_expense"] = probs.get("add_expense", 0) + 0.4
->>>>>>> working-branch
             
         if entities["amount"]:
             if entities["category"]:
@@ -276,38 +270,29 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
         if confidence < CONFIDENCE_THRESHOLD:
             intent = "fallback"
             
-        print(f"DEBUG: Winner={intent}, Score={confidence:.2f}")
     except Exception as e:
         print(f"DEBUG: Prediction error: {e}")
         intent = "fallback"
 
     # 3. Route to Handler
     if intent == "add_expense":
-<<<<<<< HEAD
-        response_message = await handle_add_expense(entities, current_user, session)
-=======
         # Integrate automatic extraction module
         try:
             parsed = process_expense(text)
             entities["amount"] = parsed["amount"]
             entities["category"] = parsed["category"]
-        except Exception:
+        except:
             pass
             
-        response_message = handle_add_expense(entities, current_user, session)
->>>>>>> working-branch
+        response_message = await handle_add_expense(entities, current_user, session)
     elif intent == "total_expenses":
         response_message = await handle_total_expenses(entities, current_user, session)
     elif intent == "show_expenses":
-<<<<<<< HEAD
         response_message = await handle_show_expenses(entities, current_user, session)
-=======
-        response_message = handle_show_expenses(entities, current_user, session)
     elif intent == "set_budget":
-        response_message = handle_set_budget(entities, current_user, session)
+        response_message = await handle_set_budget(entities, current_user, session)
     elif intent == "show_budget":
-        response_message = handle_show_budget(entities, current_user, session)
->>>>>>> working-branch
+        response_message = await handle_show_budget(entities, current_user, session)
     elif intent == "unknown":
         response_message = get_professional_response("unknown", entities)
     else:

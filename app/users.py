@@ -4,25 +4,9 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession as Session
 
 from app.models import Users
-from .auth import get_current_user
+from .auth import get_current_user, pwd
 from .database import get_session
-<<<<<<< HEAD
-
-import cloudinary
-import cloudinary.uploader
-from fastapi.concurrency import run_in_threadpool
-import os
-
-cloudinary.config(
-    cloud_name="dnkkkrerz",
-    api_key="391655656674467",
-    api_secret="bVtI8VxVqW4ZLLuZGlFBfycGujM",
-    secure=True
-)
-=======
-from .schemas import UpdateProfile, ChangePassword
-from .auth import pwd
->>>>>>> working-branch
+from .schemas import ChangePassword
 
 router = APIRouter(prefix="/user")
 
@@ -36,12 +20,13 @@ async def read_current_user(session:Session=Depends(get_session),current_user:in
 
 
 @router.post("/change-password")
-def change_password(
+async def change_password(
     data: ChangePassword,
     session: Session = Depends(get_session),
     current_user_id: int = Depends(get_current_user)
 ):
-    user = session.exec(select(Users).where(Users.user_id == current_user_id)).first()
+    result = await session.execute(select(Users).where(Users.user_id == current_user_id))
+    user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -53,7 +38,7 @@ def change_password(
     user.password = pwd.hash(data.new_password)
     
     session.add(user)
-    session.commit()
+    await session.commit()
     
     return {"message": "Password changed successfully"}
 
@@ -82,20 +67,10 @@ async def update_profile(
         user.email = email
     
     if profile_image:
-        # 1. Upload to Cloudinary using run_in_threadpool (since SDK is blocking)
-        # We pass profile_image.file directly to the uploader
-        upload_result = await run_in_threadpool(
-            cloudinary.uploader.upload, 
-            profile_image.file,
-            folder="profile_images" # Organizes your Cloudinary media library
-        )
-        user.profile_image = upload_result.get("url")
+        import shutil
+        import os
+        from uuid import uuid4
         
-<<<<<<< HEAD
-    await session.commit()
-    await session.refresh(user)
-    return {"name": user.name, "email": user.email, "profile_image": user.profile_image}
-=======
         # Generate unique filename to avoid collisions
         file_ext = os.path.splitext(profile_image.filename)[1]
         filename = f"{uuid4()}{file_ext}"
@@ -110,16 +85,17 @@ async def update_profile(
         user.profile_image = f"/static/profile_images/{filename}"
         
     session.add(user)
-    session.commit()
-    session.refresh(user)
+    await session.commit()
+    await session.refresh(user)
     return {"name": user.name, "email": user.email, "profile_image": user.profile_image}
 
 @router.delete("/me")
-def delete_current_user(
+async def delete_current_user(
     session: Session = Depends(get_session),
     current_user_id: int = Depends(get_current_user)
 ):
-    user = session.exec(select(Users).where(Users.user_id == current_user_id)).first()
+    result = await session.execute(select(Users).where(Users.user_id == current_user_id))
+    user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -137,8 +113,7 @@ def delete_current_user(
                     print(f"Error deleting profile image: {e}")
 
     # 2. Delete user (cascading handles DB related data)
-    session.delete(user)
-    session.commit()
+    await session.delete(user)
+    await session.commit()
     
     return {"message": "Account and all associated data deleted successfully"}
->>>>>>> working-branch
