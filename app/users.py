@@ -15,7 +15,7 @@ import os
 cloudinary.config(
     cloud_name="dnkkkrerz",
     api_key="391655656674467",
-    api_secret="**********",
+    api_secret="bVtI8VxVqW4ZLLuZGlFBfycGujM",
     secure=True
 )
 

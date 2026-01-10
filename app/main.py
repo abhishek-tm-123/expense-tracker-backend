@@ -9,8 +9,7 @@ from .chat import router as chat
 from .dashboard import router as dashboard_router
 
 
-from fastapi.staticfiles import StaticFiles
-import os
+
 
 app = FastAPI()
 
