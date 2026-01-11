@@ -52,7 +52,7 @@ def predict_intent_rule_based(text: str) -> dict:
     probs = {intent: 0.1 for intent in intents}
     
     # Rule-based detection
-    if any(word in text_lower for word in ["spent", "paid", "bought", "purchased"]):
+    if any(word in text_lower for word in ["add expense","spent", "paid", "bought", "purchased"]):
         probs["add_expense"] = 0.8
     elif any(word in text_lower for word in ["show", "list", "view"]):
         if "budget" in text_lower:
