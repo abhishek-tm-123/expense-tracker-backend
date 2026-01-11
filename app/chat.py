@@ -15,7 +15,7 @@ from .utils.entity_extractor import extract_entities, get_professional_response
 from .utils.expense_parser import process_expense
 
 # Load ML model with error handling
-model_path = Path(__file__).parent / "ml" / "intent_model.pkl"
+model_path = Path(__file__).parent / "ml" / "intent_pipeline_v1.pkl"
 intent_pipeline = None
 try:
     intent_pipeline = joblib.load(model_path)
@@ -185,6 +185,10 @@ async def handle_total_expenses(entities, user_id, session: Session):
     if entities["start_date"] and entities["end_date"]:
         stmt = stmt.where(Expense.created_at >= entities["start_date"], Expense.created_at <= entities["end_date"])
     
+    # Filter by category if specified
+    if entities["category"]:
+        stmt = stmt.where(Expense.category == entities["category"])
+    
     result = await session.execute(stmt)
     expenses = result.scalars().all()
     total = sum(e.amount for e in expenses)
@@ -194,6 +198,10 @@ async def handle_show_expenses(entities, user_id, session: Session):
     stmt = select(Expense).where(Expense.user_id == user_id)
     if entities["start_date"] and entities["end_date"]:
         stmt = stmt.where(Expense.created_at >= entities["start_date"], Expense.created_at <= entities["end_date"])
+    
+    # Filter by category if specified
+    if entities["category"]:
+        stmt = stmt.where(Expense.category == entities["category"])
     
     result = await session.execute(stmt)
     expenses = result.scalars().all()
@@ -281,7 +289,7 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
         
         # Apply Boosts to probabilities
         # Add Expense Boost
-        expense_verbs = ["spent", "paid", "bought", "purchased", "went", "ate", "had", "visit"]
+        expense_verbs = ["spent", "paid", "bought", "purchased", "went", "ate", "had", "visit","add expense","add"]
         if any(word in text.lower() for word in expense_verbs):
             probs["add_expense"] = probs.get("add_expense", 0) + 0.4
             
@@ -290,7 +298,7 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
                 probs["add_expense"] = probs.get("add_expense", 0) + 0.2
                 
         # Set Budget Boost (Require budget-related keywords to avoid false positives)
-        budget_keywords = ["limit", "budget", "cap", "target", "set"]
+        budget_keywords = ["limit", "budget", "cap", "target", "set",]
         if any(word in text.lower() for word in budget_keywords):
             if entities["amount"]:
                 probs["set_budget"] = probs.get("set_budget", 0) + 0.4
@@ -307,7 +315,11 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
             else:
                 probs["show_expenses"] = probs.get("show_expenses", 0) + 0.2
                 probs["total_expenses"] = probs.get("total_expenses", 0) + 0.2
-
+        
+        # Total Expenses Boost
+        if any(word in text.lower() for word in ["total", "summary","sum","how much"]):
+            probs["total_expenses"] = probs.get("total_expenses", 0) + 0.2      
+        
         # Pick the winner
         intent = max(probs, key=probs.get)
         confidence = probs[intent]

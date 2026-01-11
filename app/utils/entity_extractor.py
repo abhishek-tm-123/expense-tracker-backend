@@ -53,16 +53,24 @@ def get_professional_response(intent: str, entities: dict, success: bool = True,
     if intent == "total_expenses":
         total = data.get("total", 0)
         label = entities.get("date_label", "overall")
+        category = entities.get("category")
+        
+        if category:
+            return f"📊 **{category.title()} Spending Summary ({label.title()})**\n\nYour total {category} expenses for this period amount to **₹{total}**. Let me know if you need a detailed breakdown!"
         return f"📊 **Spending Summary ({label.title()})**\n\nYour total expenses for this period amount to **₹{total}**. Let me know if you need a detailed breakdown!"
 
     if intent == "show_expenses":
         expenses = data.get("expenses", [])
         label = entities.get("date_label", "overall")
+        category = entities.get("category")
+        
         if not expenses:
-            return f"📂 **No expenses found** for {label}. You're all clear!"
+            cat_msg = f" in {category.title()}" if category else ""
+            return f"📂 **No expenses found**{cat_msg} for {label}. You're all clear!"
         
         lines = [f"• **₹{e.amount}** | {e.category.title()} | {e.created_at.date()}" for e in expenses]
-        return f"📝 **Expense Records ({label.title()})**\n\n" + "\n".join(lines)
+        header = f"📝 **{category.title()} Expense Records ({label.title()})**" if category else f"📝 **Expense Records ({label.title()})**"
+        return header + "\n\n" + "\n".join(lines)
 
     if intent == "unknown":
         return (

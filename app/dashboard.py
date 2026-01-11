@@ -171,16 +171,19 @@ def build_dashboard_response(expenses, monthly_expenses, budgets, start_dt, end_
     # Smart remaining_budget logic
     if overall_budget:
         # If an overall limit is set, that's the source of truth for "Remaining"
-        remaining_budget = max(overall_budget.amount - monthly_total, 0)
+        remaining_budget = overall_budget.amount - monthly_total
     else:
         # Fallback: sum of remaining room in categorized budgets
-        remaining_budget = sum(max(0, b.amount - monthly_cat_spent.get(b.category, 0)) for b in budgets if b.category)
+        remaining_budget = sum(b.amount - monthly_cat_spent.get(b.category, 0) for b in budgets if b.category)
+
+    budget_exceeded = remaining_budget < 0
 
     return {
         "summary": {
             "totalSpent": total_expense,
             "avgDaily": avg_daily,
             "remainingBudget": round(remaining_budget, 2),
+            "budgetExceeded": budget_exceeded,
             "changePercent": change_percent
         },
         "categories": categories,

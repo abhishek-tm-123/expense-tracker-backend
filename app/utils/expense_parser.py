@@ -17,15 +17,15 @@ def detect_category(text: str) -> str:
         "food": [
             "pizza", "burger", "meal", "lunch", "dinner", "restaurant", "hotel", 
             "swiggy", "zomato", "biryani", "thali", "dosa", "idli", "paneer", 
-            "blinkit", "zepto", "bigbasket", "milk", "grocery"
+            "blinkit", "zepto", "bigbasket", "milk", "grocery","food",
         ],
-        "snacks": ["chai", "coffee", "chips", "biscuit", "maggi", "momos", "samosa", "chaat", "juice"],
-        "travel": ["bus", "train", "taxi", "uber", "ola", "flight", "rickshaw", "auto", "metro", "rapido", "irctc"],
-        "fuel": ["petrol", "diesel", "fuel", "cng", "shell", "iocl", "bpcl"],
-        "entertainment": ["movie", "netflix", "prime", "hotstar", "pvr", "inox", "bookmyshow", "concert", "match"],
-        "health": ["doctor", "medicine", "hospital", "clinic", "pharmacy", "apollo", "1mg", "pharmeasy"],
-        "shopping": ["shirt", "shoes", "clothes", "amazon", "flipkart", "myntra", "ajio", "meesho", "mall"],
-        "rent": ["rent", "electricity", "water", "gas", "indane", "bijli"]
+        "snacks": ["chai", "coffee", "chips", "biscuit", "maggi", "momos", "samosa", "chaat", "juice","snacks"],
+        "travel": ["bus", "train", "taxi", "uber", "ola", "flight", "rickshaw", "auto", "metro", "rapido", "irctc","travel"],
+        "fuel": ["petrol", "diesel", "fuel", "cng", "shell", "iocl", "bpcl","fuel"],
+        "entertainment": ["movie", "netflix", "prime", "hotstar", "pvr", "inox", "bookmyshow", "concert", "match","entertainment"],
+        "health": ["doctor", "medicine", "hospital", "clinic", "pharmacy", "apollo", "1mg", "pharmeasy","health"],
+        "shopping": ["shirt", "shoes", "clothes", "amazon", "flipkart", "myntra", "ajio", "meesho", "mall","shopping"],
+        "rent": ["rent", "electricity", "water", "gas", "indane", "bijli","rent"]
     }
     
     scores = {cat: 0 for cat in keyword_map}
