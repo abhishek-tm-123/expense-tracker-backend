@@ -22,7 +22,7 @@ def detect_category(text: str) -> str:
         "snacks": ["chai", "coffee", "chips", "biscuit", "maggi", "momos", "samosa", "chaat", "juice","snacks"],
         "travel": ["bus", "train", "taxi", "uber", "ola", "flight", "rickshaw", "auto", "metro", "rapido", "irctc","travel"],
         "fuel": ["petrol", "diesel", "fuel", "cng", "shell", "iocl", "bpcl","fuel"],
-        "entertainment": ["movie", "netflix", "prime", "hotstar", "pvr", "inox", "bookmyshow", "concert", "match","entertainment"],
+        "entertainment": ["movie", "netflix", "prime", "hotstar", "pvr", "inox", "bookmyshow", "concert", "match","entertainment","games","sports"],
         "health": ["doctor", "medicine", "hospital", "clinic", "pharmacy", "apollo", "1mg", "pharmeasy","health"],
         "shopping": ["shirt", "shoes", "clothes", "amazon", "flipkart", "myntra", "ajio", "meesho", "mall","shopping"],
         "rent": ["rent", "electricity", "water", "gas", "indane", "bijli","rent"]

@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import select
+from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession as Session
 from datetime import datetime, timedelta, time
+import asyncio
 
 from .auth import get_current_user
 from .database import get_session
@@ -45,106 +46,134 @@ async def get_dashboard(
 ):
     start_dt, end_dt = get_date_range(range, start_date, end_date)
     
-    # Current period expenses
-    result = await session.execute(
-        select(Expense).where(
-            Expense.user_id == current_user,
-            Expense.created_at >= start_dt,
-            Expense.created_at <= end_dt
-        )
+    # --- 1. Main Range Aggregations ---
+    # Total Spent
+    stmt_total = select(func.sum(Expense.amount)).where(
+        Expense.user_id == current_user,
+        Expense.created_at >= start_dt,
+        Expense.created_at <= end_dt
     )
-    expenses = result.scalars().all()
+    
+    # Category Breakdown
+    stmt_cats = select(Expense.category, func.sum(Expense.amount)).where(
+        Expense.user_id == current_user,
+        Expense.created_at >= start_dt,
+        Expense.created_at <= end_dt
+    ).group_by(Expense.category)
 
-    # Previous period expenses for changePercent
+    # Trends (Group by Date)
+    # Using simple date casting (SQLite compatible)
+    stmt_trends = select(func.date(Expense.created_at), func.sum(Expense.amount)).where(
+        Expense.user_id == current_user,
+        Expense.created_at >= start_dt,
+        Expense.created_at <= end_dt
+    ).group_by(func.date(Expense.created_at))
+
+    # --- 2. Previous Period (for Change %) ---
     period_days = (end_dt - start_dt).days + 1
-    prev_start_date = start_dt - timedelta(days=period_days)
-    prev_end_date = start_dt - timedelta(seconds=1)
+    prev_start = start_dt - timedelta(days=period_days)
+    prev_end = start_dt - timedelta(seconds=1)
     
-    prev_result = await session.execute(
-        select(Expense).where(
-            Expense.user_id == current_user,
-            Expense.created_at >= prev_start_date,
-            Expense.created_at <= prev_end_date
-        )
+    stmt_prev = select(func.sum(Expense.amount)).where(
+        Expense.user_id == current_user,
+        Expense.created_at >= prev_start,
+        Expense.created_at <= prev_end
     )
-    prev_expenses = prev_result.scalars().all()
     
-    prev_total = sum(e.amount for e in prev_expenses)
-    current_total = sum(e.amount for e in expenses)
-    
-    if prev_total > 0:
-        change_percent = round(((current_total - prev_total) / prev_total) * 100, 1)
-    else:
-        change_percent = 100.0 if current_total > 0 else 0.0
-
-    # Budget Logic (Monthly based)
+    # --- 3. Monthly (for Budget) ---
     now = datetime.utcnow()
     month, year = now.month, now.year
-    start_of_month = datetime(year, month, 1)
-    
-    # 1. Fetch all monthly expenses for budget checking
-    monthly_result = await session.execute(
-        select(Expense).where(
-            Expense.user_id == current_user,
-            Expense.created_at >= start_of_month
-        )
-    )
-    monthly_expenses = monthly_result.scalars().all()
-    monthly_total = sum(e.amount for e in monthly_expenses)
-    
-    # 2. Fetch budgets
-    budgets_result = await session.execute(
-        select(Budget).where(
-            Budget.user_id == current_user,
-            Budget.month == month,
-            Budget.year == year
-        )
-    )
-    budgets = budgets_result.scalars().all()
+    month_start = datetime(year, month, 1)
 
-    return build_dashboard_response(expenses, monthly_expenses, budgets, start_dt, end_dt, change_percent)
+    # Monthly Category Spend
+    stmt_month_cats = select(Expense.category, func.sum(Expense.amount)).where(
+        Expense.user_id == current_user,
+        Expense.created_at >= month_start
+    ).group_by(Expense.category)
+    
+    # Budgets
+    stmt_budgets = select(Budget).where(
+        Budget.user_id == current_user,
+        Budget.month == month,
+        Budget.year == year
+    )
 
-def build_dashboard_response(expenses, monthly_expenses, budgets, start_dt, end_dt, change_percent):
-    total_expense = sum(exp.amount for exp in expenses)
-    days_count = max((end_dt - start_dt).days, 1)
+    # EXECUTE QUERIES SEQUENTIALLY (Session assumes single connection)
+    
+    # 1. Total
+    result_total = await session.execute(stmt_total)
+    total_expense = result_total.scalar() or 0
+    
+    # 2. Categories
+    result_cats = await session.execute(stmt_cats)
+    categories_rows = result_cats.all()
+    categories = [{"name": r[0], "amount": r[1]} for r in categories_rows]
+    
+    # 3. Trends
+    result_trends = await session.execute(stmt_trends)
+    trends_rows = result_trends.all()
+    
+    # 4. Prev Total
+    result_prev = await session.execute(stmt_prev)
+    prev_total = result_prev.scalar() or 0
+    
+    # 5. Month Cats
+    result_month_cats = await session.execute(stmt_month_cats)
+    month_cats_rows = result_month_cats.all()
+    monthly_cat_spent = {r[0]: r[1] for r in month_cats_rows}
+    monthly_total = sum(monthly_cat_spent.values())
+    
+    # 6. Budgets
+    result_budgets = await session.execute(stmt_budgets)
+    budgets = result_budgets.scalars().all()
+
+    # --- PROCESS DATA ---
+    
+    # Change Percent
+    if prev_total > 0:
+        change_percent = round(((total_expense - prev_total) / prev_total) * 100, 1)
+    else:
+        change_percent = 100.0 if total_expense > 0 else 0.0
+
+    # Avg Daily
+    days_count = max((end_dt - start_dt).days + 1, 1) # +1 inclusive
     avg_daily = round(total_expense / days_count, 2) if days_count > 0 else 0
+
+    # Trend Formatting (Fill Gaps)
+    trend_map = {}
+    curr = start_dt.date()
+    # Fill range with 0
+    while curr <= end_dt.date():
+        trend_map[curr.strftime("%Y-%m-%d")] = 0
+        curr += timedelta(days=1)
+        
+    # Populate actuals
+    for date_val, amount in trends_rows:
+        # date_val is usually a string 'YYYY-MM-DD' in SQLite, or date obj in PG
+        k = str(date_val)
+        if k in trend_map:
+            trend_map[k] = amount
+            
+    # Convert to frontend format ("DD %b")
+    sorted_keys = sorted(trend_map.keys())
+    trends_labels = []
+    trends_values = []
     
-    category_map = {}
-    
-    # Pre-fill daily map with all days in range to avoid gaps
-    daily_map = {}
-    current_day = start_dt.date()
-    while current_day <= end_dt.date():
-        daily_map[current_day.strftime("%d %b")] = 0
-        current_day += timedelta(days=1)
-
-    for e in expenses:  
-        category_map[e.category] = category_map.get(e.category, 0) + e.amount
-        day_str = e.created_at.strftime("%d %b")
-        if day_str in daily_map:
-            daily_map[day_str] += e.amount
-
-    categories = [
-        {"name": k, "amount": v} for k, v in category_map.items()
-    ]
-
+    for k in sorted_keys:
+        d_obj = datetime.strptime(k, "%Y-%m-%d")
+        trends_labels.append(d_obj.strftime("%d %b"))
+        trends_values.append(trend_map[k])
+        
     trends = {
-        "labels": list(daily_map.keys()),
-        "values": list(daily_map.values())
+        "labels": trends_labels,
+        "values": trends_values
     }
-
-    # Insights & Budget Status
+    
+    # Insights & Budgets
     insights = []
     if avg_daily > 500:
         insights.append("Your average daily spending is high this period")
 
-    # Calculate monthly category spending for budgets
-    monthly_cat_spent = {}
-    for e in monthly_expenses:
-        monthly_cat_spent[e.category] = monthly_cat_spent.get(e.category, 0) + e.amount
-    
-    monthly_total = sum(e.amount for e in monthly_expenses)
-    
     budget_list = []
     overall_budget = None
     
@@ -162,18 +191,18 @@ def build_dashboard_response(expenses, monthly_expenses, budgets, start_dt, end_
         if not b.category:
             overall_budget = b
 
-        # Add warnings to insights
+        # Add warnings using pre-calculated 'used'
         if used > b.amount:
             insights.append(f"⚠️ Budget exceeded for {cat_name}! (₹{used}/₹{b.amount})")
         elif used > b.amount * 0.9:
             insights.append(f"🟠 You've used {round((used/b.amount)*100)}% of your {cat_name} budget")
 
-    # Smart remaining_budget logic
+    # Remaining Budget Logic
     if overall_budget:
-        # If an overall limit is set, that's the source of truth for "Remaining"
         remaining_budget = overall_budget.amount - monthly_total
     else:
-        # Fallback: sum of remaining room in categorized budgets
+        # Sum of remaining in categorized budgets
+        # This logic is a bit partial if there are non-budgeted expenses, but matches previous logic
         remaining_budget = sum(b.amount - monthly_cat_spent.get(b.category, 0) for b in budgets if b.category)
 
     budget_exceeded = remaining_budget < 0

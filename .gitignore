@@ -43,3 +43,6 @@ logs/
 # ---- Static Files ----
 app/static/profile_images/*
 !app/static/profile_images/.gitkeep
+
+# all file
+backend_py_only.txt

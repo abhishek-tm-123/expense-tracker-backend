@@ -1,107 +1,33 @@
-import joblib
-import nltk
-from nltk.stem import WordNetLemmatizer
-from pathlib import Path
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import select
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel.ext.asyncio.session import AsyncSession as Session
+from sqlmodel import select
+from pydantic import BaseModel
+import csv
+from pathlib import Path
+import logging
 
 from .auth import get_current_user
 from .database import get_session
-from .models import Expense, ChatHistory, Budget
+from .models import ChatHistory
 from .schemas import chatMessage
 from .utils.entity_extractor import extract_entities, get_professional_response
 from .utils.expense_parser import process_expense
 
-# Load ML model with error handling
-model_path = Path(__file__).parent / "ml" / "intent_pipeline_v1.pkl"
-intent_pipeline = None
-try:
-    intent_pipeline = joblib.load(model_path)
-    print("✓ ML intent model loaded successfully")
-except FileNotFoundError:
-    print("⚠ Warning: ML model not found. Using rule-based intent detection.")
-except Exception as e:
-    print(f"⚠ Warning: Could not load ML model: {e}. Using rule-based intent detection.")
+# Import Services
+from .services.chat_nlp import predict_intent, retrain_model_logic, CONFIDENCE_THRESHOLD
+from .services.chat_handlers import (
+    handle_add_expense, 
+    handle_total_expenses, 
+    handle_show_expenses, 
+    handle_set_budget, 
+    handle_show_budget,
+    save_chat_history
+)
 
-# Initialize lemmatizer
-try:
-    lemmatizer = WordNetLemmatizer()
-    lemmatizer.lemmatize("test")
-except LookupError:
-    nltk.download('wordnet', quiet=True)
-    nltk.download('omw-1.4', quiet=True)
-    lemmatizer = WordNetLemmatizer()
-
-CONFIDENCE_THRESHOLD = 0.5
-
-def preprocess_text(text: str) -> str:
-    """Preprocess text with lemmatization for better intent matching."""
-    lemmatizer = WordNetLemmatizer()
-    words = text.lower().split()
-    lemmatized = [lemmatizer.lemmatize(word) for word in words]
-    return " ".join(lemmatized)
-
-def predict_intent_rule_based(text: str) -> dict:
-    """Rule-based intent detection fallback when ML model is unavailable."""
-    text_lower = text.lower()
-    
-    # Initialize all intents with low probability
-    intents = ["add_expense", "show_expenses", "total_expenses", "set_budget", "show_budget", "unknown"]
-    probs = {intent: 0.1 for intent in intents}
-    
-    # Rule-based detection
-    if any(word in text_lower for word in ["add expense","spent", "paid", "bought", "purchased"]):
-        probs["add_expense"] = 0.8
-    elif any(word in text_lower for word in ["show", "list", "view"]):
-        if "budget" in text_lower:
-            probs["show_budget"] = 0.7
-        else:
-            probs["show_expenses"] = 0.7
-    elif any(word in text_lower for word in ["total", "sum", "how much"]):
-        probs["total_expenses"] = 0.7
-    elif any(word in text_lower for word in ["set", "limit", "budget"]) and "budget" in text_lower:
-        probs["set_budget"] = 0.7
-    else:
-        probs["unknown"] = 0.6
-    
-    intent = max(probs, key=probs.get)
-    return {
-        "intent": intent,
-        "confidence": probs[intent],
-        "probs": probs
-    }
-
-def predict_intent(text: str) -> dict:
-    """Predict intent using ML model or rule-based fallback."""
-    if intent_pipeline is None:
-        return predict_intent_rule_based(text)
-    
-    try:
-        processed = preprocess_text(text)
-        probs = intent_pipeline.predict_proba([processed])[0]
-        intent_idx = probs.argmax()
-
-        intent = intent_pipeline.classes_[intent_idx]
-        confidence = probs[intent_idx]
-        
-        return {
-            "intent": intent,
-            "confidence": confidence,
-            "probs": dict(zip(intent_pipeline.classes_, probs))
-        }
-    except Exception as e:
-        print(f"ML prediction failed: {e}, using rule-based fallback")
-        return predict_intent_rule_based(text)
+# Configure Logger
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat")
-
-async def save_chat_history(user_id:int, message:str, sender:str, session:Session):   
-    chat_entry = ChatHistory(user_id=user_id, message=message, sender=sender)
-    session.add(chat_entry)
-    await session.commit()
-    return chat_entry
 
 @router.get("/history")
 async def get_chat_history(session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
@@ -109,7 +35,7 @@ async def get_chat_history(session: Session = Depends(get_session), current_user
     result = await session.execute(stmt)
     chat_history = result.scalars().all()
     return [
-        { "sender": c.sender, "text": c.message, "time": c.timestamp}
+        { "sender": c.sender, "text": c.message, "time": c.timestamp, "data": c.data}
         for c in chat_history
     ]
 
@@ -121,174 +47,159 @@ async def clear_chat(session: Session = Depends(get_session), current_user: int 
     for chat in chats:
         await session.delete(chat)
     await session.commit()
+    logger.info(f"Chat history cleared for user {current_user}")
     return {"message": "Chat history cleared"}
 
-async def handle_add_expense(entities, user_id, session: Session):
-    if not entities["amount"] or not entities["category"]:
-        return get_professional_response("add_expense", entities, success=False)
-    
-    expense = Expense(
-        title=f"{entities['category'].title()} expense",
-        user_id=user_id,
-        amount=entities["amount"],
-        category=entities["category"]
-    )
-    session.add(expense)
-    
-    # --- BUDGET WARNING LOGIC ---
-    now = datetime.now()
-    month, year = now.month, now.year
-    
-    # 1. Total spending for this month
-    start_of_month = datetime(year, month, 1)
-    stmt_spent = select(Expense).where(
-        Expense.user_id == user_id,
-        Expense.created_at >= start_of_month
-    )
-    result = await session.execute(stmt_spent)
-    all_expenses = result.scalars().all()
-    total_spent = sum(e.amount for e in all_expenses)
-    
-    # 2. Category spending
-    cat_spent = sum(e.amount for e in all_expenses if e.category == entities["category"])
-    
-    # 3. Check Budgets
-    warning = None
-    stmt_budgets = select(Budget).where(
-        Budget.user_id == user_id, 
-        Budget.month == month, 
-        Budget.year == year
-    )
-    result_budgets = await session.execute(stmt_budgets)
-    budgets = result_budgets.scalars().all()
-    
-    for b in budgets:
-        # Check specific category budget
-        if b.category == entities["category"]:
-            if cat_spent > b.amount:
-                warning = f"Budget for {b.category.title()} exceeded! (₹{cat_spent}/₹{b.amount})"
-            elif cat_spent > b.amount * 0.9:
-                warning = f"Approaching {b.category.title()} budget limit. (₹{cat_spent}/₹{b.amount})"
+class LearnRequest(BaseModel):
+    text: str
+    intent: str
+
+@router.post("/learn")
+async def learn_from_chat(request: LearnRequest, session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
+    """Add a new training example to the dataset."""
+    valid_intents = ["add_expense", "show_expenses", "total_expenses", "set_budget", "show_budget", "unknown"]
+    if request.intent not in valid_intents:
+         raise HTTPException(status_code=400, detail=f"Invalid intent. Must be one of {valid_intents}")
+
+    # Append to CSV
+    dataset_path = Path(__file__).parent / "ml" / "intent_dataset.csv"
+    try:
+        with open(dataset_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([request.text, request.intent])
+        logger.info(f"New training example added: '{request.text}' -> {request.intent}")
+    except Exception as e:
+        logger.error(f"Failed to write to dataset: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to write to dataset: {str(e)}")
         
-        # Check overall budget (where category is None)
-        if b.category is None:
-            if total_spent > b.amount:
-                warning = f"Overall monthly budget exceeded! (₹{total_spent}/₹{b.amount})"
-            elif total_spent > b.amount * 0.9:
-                warning = f"Approaching overall monthly budget limit. (₹{total_spent}/₹{b.amount})"
+    return {"message": "New training example added successfully"}
 
-    await session.commit()
-    return get_professional_response("add_expense", entities, success=True, warning=warning)
+@router.get("/suggestions")
+async def get_chat_suggestions(q: str = Query("", min_length=1), current_user: int = Depends(get_current_user), session: Session = Depends(get_session)):
+    """Provide Google-style autocomplete suggestions."""
+    query = q.lower().strip()
+    suggestions = []
+    
+    # 1. Standard Templates
+    templates = [
+        "Show my expenses",
+        "Show expense history",
+        "Show budget",
+        "Check my budget status",
+        "Total expenses this month",
+        "How much did I spend on food?",
+        "How much did I spend on travel?",
+        "Set budget for food 5000",
+        "Set budget for travel 2000",
+        "Clear chat history"
+    ]
+    
+    # 2. Dynamic Templates
+    import re
+    if re.match(r'^\d+$', query):
+        suggestions.append(f"Spent {query} on food")
+        suggestions.append(f"Spent {query} on travel")
+        suggestions.append(f"Spent {query} on entertainment")
+    
+    if query.startswith(("spent", "paid", "bought", "add")):
+        suggestions.append("Spent [amount] on [category]")
+        suggestions.append("Paid [amount] for [item]")
+    
+    # 3. Dynamic from Dataset
+    dataset_path = Path(__file__).parent / "ml" / "intent_dataset.csv"
+    try:
+        if dataset_path.exists():
+            with open(dataset_path, "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                next(reader, None) # Skip header
+                for row in reader:
+                    if len(row) >= 1:
+                        text = row[0]
+                        if query in text.lower():
+                            suggestions.append(text.strip())
+    except Exception as e:
+        logger.error(f"Error reading dataset for suggestions: {e}")
 
-async def handle_total_expenses(entities, user_id, session: Session):
-    stmt = select(Expense).where(Expense.user_id == user_id)
-    if entities["start_date"] and entities["end_date"]:
-        stmt = stmt.where(Expense.created_at >= entities["start_date"], Expense.created_at <= entities["end_date"])
-    
-    # Filter by category if specified
-    if entities["category"]:
-        stmt = stmt.where(Expense.category == entities["category"])
-    
-    result = await session.execute(stmt)
-    expenses = result.scalars().all()
-    total = sum(e.amount for e in expenses)
-    return get_professional_response("total_expenses", entities, data={"total": total})
+    # 4. Personal History
+    try:
+        stmt = select(ChatHistory).where(
+            ChatHistory.user_id == current_user,
+            ChatHistory.sender == 'user'
+        ).order_by(ChatHistory.timestamp.desc()).limit(50)
+        
+        result = await session.execute(stmt)
+        history_items = result.scalars().all()
+        
+        history_suggestions = [h.message for h in history_items if query in h.message.lower()]
+        suggestions.extend([h.strip() for h in history_suggestions])
+    except Exception as e:
+        logger.error(f"Error fetching history suggestions: {e}")
 
-async def handle_show_expenses(entities, user_id, session: Session):
-    stmt = select(Expense).where(Expense.user_id == user_id)
-    if entities["start_date"] and entities["end_date"]:
-        stmt = stmt.where(Expense.created_at >= entities["start_date"], Expense.created_at <= entities["end_date"])
-    
-    # Filter by category if specified
-    if entities["category"]:
-        stmt = stmt.where(Expense.category == entities["category"])
-    
-    result = await session.execute(stmt)
-    expenses = result.scalars().all()
-    return get_professional_response("show_expenses", entities, data={"expenses": expenses})
+    # 5. Filter and Rank
+    for t in templates:
+        if query in t.lower():
+            suggestions.append(t)
+            
+    unique_suggestions = list(dict.fromkeys(suggestions))
+    unique_suggestions.sort()
+    return {"suggestions": unique_suggestions[:10]}
 
-async def handle_set_budget(entities, user_id, session: Session):
-    if not entities["amount"]:
-        return get_professional_response("set_budget", entities, success=False)
-    
-    now = datetime.now()
-    month, year = now.month, now.year
-    
-    # Check if budget already exists
-    stmt = select(Budget).where(
-        Budget.user_id == user_id,
-        Budget.category == entities["category"],
-        Budget.month == month,
-        Budget.year == year
-    )
-    result = await session.execute(stmt)
-    existing_budget = result.scalars().first()
-    
-    if existing_budget:
-        existing_budget.amount = entities["amount"]
-    else:
-        budget = Budget(
-            user_id=user_id,
-            category=entities["category"],
-            amount=entities["amount"],
-            month=month,
-            year=year
-        )
-        session.add(budget)
-    
-    await session.commit()
-    return get_professional_response("set_budget", entities, success=True)
-
-async def handle_show_budget(entities, user_id, session: Session):
-    now = datetime.now()
-    month, year = now.month, now.year
-    
-    # Get budgets
-    stmt = select(Budget).where(
-        Budget.user_id == user_id,
-        Budget.month == month,
-        Budget.year == year
-    )
-    result = await session.execute(stmt)
-    budgets = result.scalars().all()
-    
-    if not budgets:
-        return get_professional_response("show_budget", entities, data={"budgets": []})
-    
-    # Get monthly spending
-    start_of_month = datetime(year, month, 1)
-    stmt_expenses = select(Expense).where(
-        Expense.user_id == user_id,
-        Expense.created_at >= start_of_month
-    )
-    result_expenses = await session.execute(stmt_expenses)
-    expenses = result_expenses.scalars().all()
-    
-    # Calculate spending per category
-    spent_map = {}
-    for e in expenses:
-        spent_map[e.category] = spent_map.get(e.category, 0) + e.amount
-    
-    # Overall spending
-    spent_map[None] = sum(e.amount for e in expenses)
-    
-    return get_professional_response("show_budget", entities, data={"budgets": budgets, "spent_map": spent_map})
+@router.post("/retrain")
+async def retrain_model(session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
+    """Retrain the intent model with the latest dataset."""
+    try:
+        retrain_model_logic()
+        return {"message": "Model retrained and reloaded successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Training failed: {str(e)}")
 
 @router.post("/message")
 async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
     text = chatmessage.message.strip()
+    
+    # --- CONVERSATIONAL LEARNING / CORRECTION LOGIC ---
+    lower_text = text.lower()
+    if lower_text.startswith(("correction:", "learn:", "wrong, it's", "actually, it's")):
+        potential_intent = lower_text.split(":")[-1].strip() if ":" in lower_text else lower_text.split("it's")[-1].strip()
+        
+        valid_intents = ["add_expense", "show_expenses", "total_expenses", "set_budget", "show_budget", "unknown"]
+        matched_intent = next((i for i in valid_intents if i in potential_intent), None)
+        
+        if matched_intent:
+            stmt = select(ChatHistory).where(
+                ChatHistory.user_id == current_user, 
+                ChatHistory.sender == 'user'
+            ).order_by(ChatHistory.timestamp.desc()).limit(1)
+            result = await session.execute(stmt)
+            last_message = result.scalars().first()
+            
+            if last_message:
+                learn_req = LearnRequest(text=last_message.message, intent=matched_intent)
+                await learn_from_chat(learn_req, session, current_user)
+                await retrain_model(session, current_user)
+                
+                response_msg = f"✅ Thanks! I've learned that '{last_message.message}' should be recognized as '{matched_intent}'. I've updated my model."
+                await save_chat_history(current_user, text, 'user', session)
+                await save_chat_history(current_user, response_msg, 'bot', session)
+                return {"response": response_msg}
+            else:
+                response_msg = "⚠ I couldn't find a previous message to learn from."
+                await save_chat_history(current_user, text, 'user', session)
+                await save_chat_history(current_user, response_msg, 'bot', session)
+                return {"response": response_msg}
+
+    # Standard flow
     await save_chat_history(current_user, chatmessage.message, 'user', session)
 
-    # 1. Extract Entities (used for boosting and processing)
+    # 1. Extract Entities
     entities = extract_entities(text)
 
-    # 2. Predict Intent & Apply Global Boosting
+    # 2. Predict Intent
     try:
         result = predict_intent(text)
-        probs = result["probs"]  # Dictionary of intent -> probability
+        probs = result["probs"]
         
-        # Apply Boosts to probabilities
-        # Add Expense Boost
+        # Apply Boosts (Local logic kept here as it's part of the routing decision)
         expense_verbs = ["spent", "paid", "bought", "purchased", "went", "ate", "had", "visit","add expense","add"]
         if any(word in text.lower() for word in expense_verbs):
             probs["add_expense"] = probs.get("add_expense", 0) + 0.4
@@ -297,7 +208,6 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
             if entities["category"]:
                 probs["add_expense"] = probs.get("add_expense", 0) + 0.2
                 
-        # Set Budget Boost (Require budget-related keywords to avoid false positives)
         budget_keywords = ["limit", "budget", "cap", "target", "set",]
         if any(word in text.lower() for word in budget_keywords):
             if entities["amount"]:
@@ -305,10 +215,8 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
             else:
                 probs["set_budget"] = probs.get("set_budget", 0) + 0.2
         elif "budget" not in text.lower():
-            # Penalize set_budget if the word 'budget' isn't actually there
             probs["set_budget"] = probs.get("set_budget", 0) - 0.2
 
-        # Show Expenses/Budget Boost
         if any(word in text.lower() for word in ["show", "list", "view", "total", "summary"]):
             if "budget" in text.lower():
                 probs["show_budget"] = probs.get("show_budget", 0) + 0.2
@@ -316,11 +224,9 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
                 probs["show_expenses"] = probs.get("show_expenses", 0) + 0.2
                 probs["total_expenses"] = probs.get("total_expenses", 0) + 0.2
         
-        # Total Expenses Boost
         if any(word in text.lower() for word in ["total", "summary","sum","how much"]):
             probs["total_expenses"] = probs.get("total_expenses", 0) + 0.2      
         
-        # Pick the winner
         intent = max(probs, key=probs.get)
         confidence = probs[intent]
         
@@ -328,10 +234,13 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
             intent = "fallback"
             
     except Exception as e:
-        print(f"DEBUG: Prediction error: {e}")
+        logger.error(f"Prediction error: {e}")
         intent = "fallback"
 
     # 3. Route to Handler
+    data_updated = False
+    response_data = None
+    
     if intent == "add_expense":
         # Integrate automatic extraction module
         try:
@@ -340,20 +249,24 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
             entities["category"] = parsed["category"]
         except:
             pass
-            
-        response_message = await handle_add_expense(entities, current_user, session)
+        response_message, data_updated = await handle_add_expense(entities, current_user, session)
+        
     elif intent == "total_expenses":
         response_message = await handle_total_expenses(entities, current_user, session)
+        
     elif intent == "show_expenses":
-        response_message = await handle_show_expenses(entities, current_user, session)
+        response_message, response_data = await handle_show_expenses(entities, current_user, session)
+        
     elif intent == "set_budget":
-        response_message = await handle_set_budget(entities, current_user, session)
+        response_message, data_updated = await handle_set_budget(entities, current_user, session)
+        
     elif intent == "show_budget":
-        response_message = await handle_show_budget(entities, current_user, session)
+        response_message, response_data = await handle_show_budget(entities, current_user, session)
+        
     elif intent == "unknown":
         response_message = get_professional_response("unknown", entities)
     else:
         response_message = get_professional_response("fallback", entities)
 
-    await save_chat_history(current_user, response_message, 'bot', session)
-    return {"response": response_message}
+    await save_chat_history(current_user, response_message, 'bot', session, data=response_data)
+    return {"response": response_message, "data_updated": data_updated, "data": response_data}

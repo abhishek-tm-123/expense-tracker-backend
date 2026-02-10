@@ -377,3 +377,5 @@ show spending limits,show_budget
 what are my budget categories,show_budget
 pull up budget info,show_budget
 budget check,show_budget
+I yeeted 500 on video games,add_expense
+My wallet is lighter by 500 thanks to pizza,add_expense

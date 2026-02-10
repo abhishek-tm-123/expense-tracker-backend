@@ -11,15 +11,26 @@ from .dashboard import router as dashboard_router
 
 
 
+
+import sys
+import asyncio
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 app = FastAPI()
 
 
 
 
+import os
+
+origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,https://expense-tracker-frontend-nine-ruddy.vercel.app")
+origins = [origin.strip() for origin in origins_str.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173",
-                   "https://expense-tracker-frontend-nine-ruddy.vercel.app"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

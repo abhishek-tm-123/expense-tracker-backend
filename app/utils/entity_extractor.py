@@ -68,9 +68,8 @@ def get_professional_response(intent: str, entities: dict, success: bool = True,
             cat_msg = f" in {category.title()}" if category else ""
             return f"📂 **No expenses found**{cat_msg} for {label}. You're all clear!"
         
-        lines = [f"• **₹{e.amount}** | {e.category.title()} | {e.created_at.date()}" for e in expenses]
         header = f"📝 **{category.title()} Expense Records ({label.title()})**" if category else f"📝 **Expense Records ({label.title()})**"
-        return header + "\n\n" + "\n".join(lines)
+        return header
 
     if intent == "unknown":
         return (
@@ -94,13 +93,6 @@ def get_professional_response(intent: str, entities: dict, success: bool = True,
         if not budgets:
             return "📋 **No budgets set yet.** You can set one by saying something like 'Set a budget of 5000 for food'."
         
-        lines = []
-        for b in budgets:
-            cat = b.category.title() if b.category else "Overall"
-            spent = data.get("spent_map", {}).get(b.category, 0)
-            percent = (spent / b.amount) * 100 if b.amount > 0 else 0
-            lines.append(f"• **{cat}**: ₹{spent} / ₹{b.amount} ({percent:.1f}%)")
-        
-        return "📉 **Your Monthly Budgets**\n\n" + "\n".join(lines)
+        return "📉 **Your Monthly Budgets**"
 
     return "🙏 I'm sorry, I didn't quite understand that. Could you try rephrasing? I'm still learning!"

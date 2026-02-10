@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
+from sqlalchemy import JSON, Column
 
 
 class Users(SQLModel, table=True):
@@ -30,7 +31,7 @@ class Expense(SQLModel, table=True):
     title: str
     amount: float
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    category:str
+    category:str = Field(index=True)
     user_id: int = Field(foreign_key="users.user_id", ondelete="CASCADE")
 
     user: Optional[Users] = Relationship(back_populates="expenses")
@@ -40,6 +41,7 @@ class ChatHistory(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.user_id", ondelete="CASCADE")
     message: str
     sender: str  # 'user' or 'bot'
+    data: Optional[Dict] = Field(default=None, sa_column=Column(JSON))
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
     user: Optional[Users] = Relationship(back_populates="chat_history")
