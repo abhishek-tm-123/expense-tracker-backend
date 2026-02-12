@@ -170,16 +170,22 @@ async def get_dashboard(
     }
     
     # Insights & Budgets
-    insights = []
-    if avg_daily > 500:
-        insights.append("Your average daily spending is high this period")
-
+    
+    # --- NEW: Advanced Insights Engine ---
+    from app.insights.engine import generate_insights
+    structured_insights = await generate_insights(session, current_user)
+    
+    # Convert to simple strings for backward compatibility
+    insights = [i.message for i in structured_insights]
+    
+    # Fallback legacy check (optional, can be removed if coverage is good)
+    # Keeping budget logic for the 'budgets' list response
+    
     budget_list = []
     overall_budget = None
     
     for b in budgets:
         used = monthly_cat_spent.get(b.category, 0) if b.category else monthly_total
-        cat_name = b.category.title() if b.category else "Overall"
         
         budget_list.append({
             "category": b.category if b.category else "overall",
@@ -191,18 +197,11 @@ async def get_dashboard(
         if not b.category:
             overall_budget = b
 
-        # Add warnings using pre-calculated 'used'
-        if used > b.amount:
-            insights.append(f"⚠️ Budget exceeded for {cat_name}! (₹{used}/₹{b.amount})")
-        elif used > b.amount * 0.9:
-            insights.append(f"🟠 You've used {round((used/b.amount)*100)}% of your {cat_name} budget")
-
     # Remaining Budget Logic
     if overall_budget:
         remaining_budget = overall_budget.amount - monthly_total
     else:
         # Sum of remaining in categorized budgets
-        # This logic is a bit partial if there are non-budgeted expenses, but matches previous logic
         remaining_budget = sum(b.amount - monthly_cat_spent.get(b.category, 0) for b in budgets if b.category)
 
     budget_exceeded = remaining_budget < 0

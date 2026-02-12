@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import csv
 from pathlib import Path
 import logging
+from datetime import datetime
 
 from .auth import get_current_user
 from .database import get_session
@@ -35,7 +36,12 @@ async def get_chat_history(session: Session = Depends(get_session), current_user
     result = await session.execute(stmt)
     chat_history = result.scalars().all()
     return [
-        { "sender": c.sender, "text": c.message, "time": c.timestamp, "data": c.data}
+        { 
+            "sender": c.sender, 
+            "text": c.message, 
+            "time": c.timestamp, 
+            "data": c.data.get("expenses") if (c.data and isinstance(c.data, dict) and "expenses" in c.data) else c.data
+        }
         for c in chat_history
     ]
 
@@ -227,6 +233,15 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
         if any(word in text.lower() for word in ["total", "summary","sum","how much"]):
             probs["total_expenses"] = probs.get("total_expenses", 0) + 0.2      
         
+        # Navigation Boost (Force Override)
+        nav_keywords = ["previous", "next", "week", "month", "last"]
+        if any(word in text.lower() for word in nav_keywords) and not any(word in text.lower() for word in ["add", "spent", "paid", "bought"]):
+             # Force high confidence for navigation
+             probs["show_expenses"] = 0.95
+             # Lower others to ensure winner
+             probs["unknown"] = 0.0
+             probs["fallback"] = 0.0
+        
         intent = max(probs, key=probs.get)
         confidence = probs[intent]
         
@@ -267,6 +282,12 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
         response_message = get_professional_response("unknown", entities)
     else:
         response_message = get_professional_response("fallback", entities)
-
+    
     await save_chat_history(current_user, response_message, 'bot', session, data=response_data)
-    return {"response": response_message, "data_updated": data_updated, "data": response_data}
+    
+    # Sanitize data for frontend (keep table compatibility)
+    frontend_data = response_data
+    if isinstance(response_data, dict) and "expenses" in response_data:
+        frontend_data = response_data["expenses"]
+        
+    return {"response": response_message, "data_updated": data_updated, "data": frontend_data}

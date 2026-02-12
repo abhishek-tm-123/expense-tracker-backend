@@ -1,10 +1,22 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+# from dateutil.relativedelta import relativedelta # Avoid dependency
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession as Session
 import logging
 
 from ..models import Expense, Budget, ChatHistory
 from ..utils.entity_extractor import get_professional_response
+
+# Helper for month calculation
+def add_months(sourcedate, months):
+    month = sourcedate.month - 1 + months
+    year = sourcedate.year + month // 12
+    month = month % 12 + 1
+    day = min(sourcedate.day, [31,
+        29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
+        31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month-1])
+    return sourcedate.replace(year=year, month=month, day=day)
+
 
 # Configure Logger
 logger = logging.getLogger(__name__)
@@ -84,12 +96,114 @@ async def handle_total_expenses(entities, user_id, session: Session):
     return get_professional_response("total_expenses", entities, data={"total": total})
 
 async def handle_show_expenses(entities, user_id, session: Session):
-    stmt = select(Expense).where(Expense.user_id == user_id)
-    if entities["start_date"] and entities["end_date"]:
-        stmt = stmt.where(Expense.created_at >= entities["start_date"], Expense.created_at <= entities["end_date"])
+    # 1. Determine Date Range & Context
+    start_date = entities.get("start_date")
+    end_date = entities.get("end_date")
+    range_label = entities.get("date_label")
+    category = entities.get("category")
     
-    if entities["category"]:
-        stmt = stmt.where(Expense.category == entities["category"])
+    period_type = "week" # Default tracking
+
+    # Determine requested period type from label
+    target_period = None
+    if range_label:
+        if "month" in range_label:
+             target_period = "month"
+        elif "week" in range_label:
+             target_period = "week"
+    
+    # Handle Contextual Navigation (Next/Previous)
+    if range_label and ("next" in range_label or "previous" in range_label):
+        # Fetch last bot message with expense context
+        stmt = select(ChatHistory).where(
+            ChatHistory.user_id == user_id,
+            ChatHistory.sender == 'bot'
+        ).order_by(ChatHistory.timestamp.desc()).limit(10)
+        
+        result = await session.execute(stmt)
+        history = result.scalars().all()
+        
+        last_context = None
+        for msg in history:
+            if msg.data and isinstance(msg.data, dict) and "start_date" in msg.data and "period_type" in msg.data:
+                last_context = msg.data
+                break
+        
+        if last_context:
+            try:
+                prev_start = datetime.strptime(last_context["start_date"], "%Y-%m-%d")
+                prev_period = last_context.get("period_type", "week")
+                
+                # If user explicitly requested a period, use it; otherwise use previous
+                period_type = target_period if target_period else prev_period
+                
+                if "next" in range_label:
+                    if period_type == "week":
+                        if prev_period == "month":
+                             # Reset to today's next week? Or start of next month?
+                             # Let's align to start of next week from *prev_start* (which was month start)
+                             start_date = prev_start + timedelta(days=7) # simplified
+                        else:
+                             start_date = prev_start + timedelta(days=7)
+                             
+                        end_date = start_date + timedelta(days=6)
+                        range_label = f"week of {start_date.strftime('%d %b')}"
+                    elif period_type == "month":
+                        start_date = add_months(prev_start, 1)
+                        # Ensure we are at start of month
+                        start_date = start_date.replace(day=1)
+                        end_date = add_months(start_date, 1) - timedelta(days=1)
+                        range_label = start_date.strftime("%B %Y")
+                        
+                elif "previous" in range_label:
+                    if period_type == "week":
+                        start_date = prev_start - timedelta(days=7)
+                        end_date = start_date + timedelta(days=6)
+                        range_label = f"week of {start_date.strftime('%d %b')}"
+                    elif period_type == "month":
+                        start_date = add_months(prev_start, -1)
+                        start_date = start_date.replace(day=1)
+                        end_date = add_months(start_date, 1) - timedelta(days=1)
+                        range_label = start_date.strftime("%B %Y")
+            except Exception as e:
+                logger.error(f"Error parsing context dates: {e}")
+                pass
+
+    # Default logic (No context or explicit current period)
+    if not start_date or not end_date:
+        today = datetime.now()
+        
+        # If explicit instruction "monthly" (target_period="month") but no next/prev
+        if target_period == "month":
+             period_type = "month"
+        elif target_period == "week":
+             period_type = "week"
+        # Else default to week (already set)
+        
+        if period_type == "week":
+            start_day = today - timedelta(days=today.weekday()) # Mon
+            start_date = start_day.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = (start_day + timedelta(days=6)).replace(hour=23, minute=59, second=59)
+            range_label = "this week"
+        elif period_type == "month": 
+            start_date = today.replace(day=1, hour=0, minute=0, second=0)
+            end_date = add_months(start_date, 1) - timedelta(days=1)
+            end_date = end_date.replace(hour=23, minute=59, second=59)
+            range_label = "this month"
+
+    # Ensure datetime objects for query
+    if isinstance(start_date, (datetime,)):
+         pass # Already datetime
+    else:
+        # If passed as something else (unlikely with current flow but safe)
+        pass 
+
+    # 2. Query Expenses
+    stmt = select(Expense).where(Expense.user_id == user_id)
+    stmt = stmt.where(Expense.created_at >= start_date, Expense.created_at <= end_date)
+    
+    if category:
+        stmt = stmt.where(Expense.category == category)
     
     stmt = stmt.order_by(Expense.created_at.asc())
     
@@ -102,7 +216,36 @@ async def handle_show_expenses(entities, user_id, session: Session):
         for e in expenses
     ]
     
-    return get_professional_response("show_expenses", entities, data={"expenses": expenses}), expenses_data
+    # 3. Construct Response
+    total = sum(e.amount for e in expenses)
+    period_str = range_label if range_label else f"{start_date.strftime('%d %b')} - {end_date.strftime('%d %b')}"
+    
+    if not expenses:
+        base_msg = f"📂 **No expenses found** for {period_str}. You're clear!"
+    else:
+        header = f"📝 **Expenses for {period_str}**"
+        if category:
+            header = f"📝 **{category.title()} Expenses ({period_str})**"
+        
+        # We don't list all text rows if there are too many, frontend handles table.
+        # But we provide a summary text.
+        base_msg = f"{header}\nTotal: **₹{total}**"
+
+    # Interactive Prompt
+    prompt = "\n\nWould you like to see expenses for the **previous week**, **next week**, or switch to **monthly** view?"
+    
+    final_message = base_msg + prompt
+
+    # 4. Return Context Data
+    response_data = {
+        "expenses": expenses_data,
+        "start_date": start_date.strftime("%Y-%m-%d"),
+        "end_date": end_date.strftime("%Y-%m-%d"),
+        "period_type": period_type,
+        "total": total
+    }
+    
+    return final_message, response_data
 
 async def handle_set_budget(entities, user_id, session: Session):
     if not entities["amount"]:
