@@ -22,6 +22,7 @@ from .services.chat_handlers import (
     handle_show_expenses, 
     handle_set_budget, 
     handle_show_budget,
+    handle_add_income,
     save_chat_history
 )
 
@@ -266,6 +267,14 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
             pass
         response_message, data_updated = await handle_add_expense(entities, current_user, session)
         
+        # Check if income exists for current month
+        now = datetime.now()
+        from .models import Income
+        stmt = select(Income).where(Income.user_id == current_user, Income.month == now.month, Income.year == now.year)
+        income_res = await session.execute(stmt)
+        if not income_res.scalars().first():
+            response_message += "\n\n💡 **Tip**: To calculate your Financial Health Score, please tell me your monthly income. (e.g., 'My salary is 50000')"
+            
     elif intent == "total_expenses":
         response_message = await handle_total_expenses(entities, current_user, session)
         
@@ -277,6 +286,9 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
         
     elif intent == "show_budget":
         response_message, response_data = await handle_show_budget(entities, current_user, session)
+    
+    elif intent == "add_income":
+        response_message, data_updated = await handle_add_income(entities, current_user, session)
         
     elif intent == "unknown":
         response_message = get_professional_response("unknown", entities)

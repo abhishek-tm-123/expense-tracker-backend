@@ -28,7 +28,12 @@ async def read_current_user(session:Session=Depends(get_session),current_user:in
     user = result.scalars().first()
     if not user:
         raise HTTPException(404,"User not found")
-    return {"name": user.name, "email": user.email, "profile_image": user.profile_image}
+    return {
+        "name": user.name, 
+        "email": user.email, 
+        "profile_image": user.profile_image,
+        "has_onboarded": user.has_onboarded
+    }
 
 
 @router.post("/change-password")
@@ -91,7 +96,27 @@ async def update_profile(
     session.add(user)
     await session.commit()
     await session.refresh(user)
-    return {"name": user.name, "email": user.email, "profile_image": user.profile_image}
+    return {
+        "name": user.name, 
+        "email": user.email, 
+        "profile_image": user.profile_image,
+        "has_onboarded": user.has_onboarded
+    }
+
+@router.put("/onboarded")
+async def set_onboarded(
+    session: Session = Depends(get_session),
+    current_user_id: int = Depends(get_current_user)
+):
+    result = await session.execute(select(Users).where(Users.user_id == current_user_id))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.has_onboarded = True
+    session.add(user)
+    await session.commit()
+    return {"message": "Onboarding status updated", "has_onboarded": True}
 
 @router.delete("/me")
 async def delete_current_user(

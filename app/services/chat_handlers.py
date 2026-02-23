@@ -4,7 +4,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession as Session
 import logging
 
-from ..models import Expense, Budget, ChatHistory
+from ..models import Expense, Budget, ChatHistory, Income
 from ..utils.entity_extractor import get_professional_response
 
 # Helper for month calculation
@@ -323,3 +323,37 @@ async def handle_show_budget(entities, user_id, session: Session):
         })
     
     return get_professional_response("show_budget", entities, data={"budgets": budgets, "spent_map": spent_map}), budget_data
+
+async def handle_add_income(entities, user_id, session: Session):
+    if not entities["amount"]:
+        return get_professional_response("add_income", entities, success=False), False
+        
+    now = datetime.now()
+    month, year = now.month, now.year
+    
+    # Logic: Only one income per user per month
+    stmt = select(Income).where(
+        Income.user_id == user_id,
+        Income.month == month,
+        Income.year == year
+    )
+    result = await session.execute(stmt)
+    existing_income = result.scalars().first()
+    
+    updated = False
+    if existing_income:
+        existing_income.amount = entities["amount"]
+        updated = True
+        logger.info(f"Updated income for user {user_id}: {entities['amount']} for {month}/{year}")
+    else:
+        new_income = Income(
+            user_id=user_id,
+            amount=entities["amount"],
+            month=month,
+            year=year
+        )
+        session.add(new_income)
+        logger.info(f"Saved new income for user {user_id}: {entities['amount']} for {month}/{year}")
+    
+    await session.commit()
+    return get_professional_response("add_income", entities, success=True, data={"updated": updated, "month": month, "year": year}), True

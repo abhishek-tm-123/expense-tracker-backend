@@ -1,15 +1,25 @@
 import re
 
 def extract_amount(text: str) -> float:
+    # Pre-process text to handle 'k' notation and clean numeric strings
+    text = text.lower().replace(",", "")
+    
+    # regex to find numbers potentially followed by 'k'
+    # handles cases like 40k, 40 k, 40.5k
     patterns = [
-        r"(?:rs|₹)\s?(\d+(?:\.\d+)?)",
-        r"(\d+(?:\.\d+)?)\s?(?:rs|rupees)",
-        r"(\d+(?:\.\d+)?)"
+        r"(?:rs|₹|income|salary|earn|paid|spent|cost|for)\s?(\d+(?:\.\d+)?)\s?(k)?",
+        r"(\d+(?:\.\d+)?)\s?(k)?\s?(?:rs|rupees|income|salary|earnings|per month)",
+        r"(\d+(?:\.\d+)?)\s?(k)?"
     ]
+    
     for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
+        match = re.search(pattern, text)
         if match:
-            return float(match.group(1))
+            val = float(match.group(1))
+            if match.group(2) == 'k':
+                val *= 1000
+            return val
+            
     raise ValueError("Amount not found in text")
 
 def detect_category(text: str) -> str:

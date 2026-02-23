@@ -3,12 +3,54 @@ from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession as Session
 from datetime import datetime, timedelta, time
 import asyncio
+import numpy as np
 
 from .auth import get_current_user
 from .database import get_session
 from .models import Expense, Budget
 
 router = APIRouter(prefix="/dashboard")
+
+def calculate_health_score(total_spent, income, daily_values):
+    if income <= 0:
+        return 50, "Moderate"
+
+    savings = income - total_spent
+    savings_rate = savings / income
+    expense_ratio = total_spent / income
+    
+    avg_daily = total_spent / len(daily_values) if daily_values else 0
+    std_dev = np.std(daily_values) if daily_values else 0
+    volatility_ratio = std_dev / avg_daily if avg_daily > 0 else 0
+
+    # 1. Savings Score (50%)
+    if savings_rate >= 0.3: savings_score = 100
+    elif savings_rate >= 0.15: savings_score = 80
+    elif savings_rate >= 0.05: savings_score = 60
+    elif savings_rate >= 0: savings_score = 40
+    else: savings_score = 20
+
+    # 2. Expense Score (25%)
+    if expense_ratio <= 0.6: expense_score = 100
+    elif expense_ratio <= 0.8: expense_score = 80
+    elif expense_ratio <= 1.0: expense_score = 60
+    else: expense_score = 20
+
+    # 3. Stability Score (25%)
+    if volatility_ratio < 0.5: stability_score = 100
+    elif volatility_ratio <= 1.0: stability_score = 70
+    else: stability_score = 40
+
+    health_score = int(0.5 * savings_score + 0.25 * expense_score + 0.25 * stability_score)
+    health_score = max(0, min(100, health_score))
+
+    if health_score >= 80: status = "Excellent"
+    elif health_score >= 60: status = "Good"
+    elif health_score >= 40: status = "Moderate"
+    elif health_score >= 20: status = "Risky"
+    else: status = "Critical"
+
+    return health_score, status
 
 def get_date_range(range: str, start_date_str: str = None, end_date_str: str = None):
     today = datetime.utcnow().date()
@@ -97,6 +139,14 @@ async def get_dashboard(
         Budget.month == month,
         Budget.year == year
     )
+    
+    # Income (New)
+    from .models import Income
+    stmt_income = select(Income).where(
+        Income.user_id == current_user,
+        Income.month == month,
+        Income.year == year
+    )
 
     # EXECUTE QUERIES SEQUENTIALLY (Session assumes single connection)
     
@@ -126,6 +176,11 @@ async def get_dashboard(
     # 6. Budgets
     result_budgets = await session.execute(stmt_budgets)
     budgets = result_budgets.scalars().all()
+    
+    # 7. Income
+    result_income = await session.execute(stmt_income)
+    income_record = result_income.scalars().first()
+    income_val = income_record.amount if income_record else 0
 
     # --- PROCESS DATA ---
     
@@ -206,13 +261,30 @@ async def get_dashboard(
 
     budget_exceeded = remaining_budget < 0
 
+    # Calculate Financial Health Score
+    total_budget = sum(b.amount for b in budgets)
+    income_missing = income_val <= 0
+    if not income_missing:
+        daily_values = list(trend_map.values())
+        health_score, health_status = calculate_health_score(total_expense, income_val, daily_values)
+    else:
+        health_score = 0
+        health_status = "Pending Income"
+
     return {
         "summary": {
             "totalSpent": total_expense,
+            "totalBudget": total_budget,
             "avgDaily": avg_daily,
             "remainingBudget": round(remaining_budget, 2),
             "budgetExceeded": budget_exceeded,
-            "changePercent": change_percent
+            "changePercent": change_percent,
+            "income": income_val,
+            "incomeMissing": income_missing,
+            "savings": round(income_val - total_expense, 2) if not income_missing else 0,
+            "healthScore": health_score,
+            "healthStatus": health_status,
+            "message": "Add your monthly income through chat to unlock Financial Health Score." if income_missing else None
         },
         "categories": categories,
         "trends": trends,

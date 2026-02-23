@@ -26,3 +26,8 @@ AsyncSessionLocal = sessionmaker(
 async def get_session():
     async with AsyncSessionLocal() as session:
         yield session
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(create_db())
+    print("Database tables synchronized successfully.")

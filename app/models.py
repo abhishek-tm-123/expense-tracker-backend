@@ -10,6 +10,7 @@ class Users(SQLModel, table=True):
     email: str = Field(index=True, unique=True)
     password: str
     profile_image: Optional[str] = Field(default=None)
+    has_onboarded: bool = Field(default=False)
    
     # Cascading deletions: when a user is deleted, all their data goes too
     expenses: List["Expense"] = Relationship(
@@ -21,6 +22,10 @@ class Users(SQLModel, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
     chat_history: List["ChatHistory"] = Relationship(
+        back_populates="user", 
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    incomes: List["Income"] = Relationship(
         back_populates="user", 
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
@@ -56,3 +61,13 @@ class Budget(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     user: Optional[Users] = Relationship(back_populates="budgets")
+
+class Income(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.user_id", ondelete="CASCADE")
+    amount: float = Field(gt=0)
+    month: int = Field(ge=1, le=12)
+    year: int = Field(ge=2000)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    user: Optional[Users] = Relationship(back_populates="incomes")

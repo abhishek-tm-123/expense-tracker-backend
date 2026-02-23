@@ -95,4 +95,11 @@ def get_professional_response(intent: str, entities: dict, success: bool = True,
         
         return "📉 **Your Monthly Budgets**"
 
+    if intent == "add_income":
+        if success:
+            prefix = "🔄" if data and data.get("updated") else "✅"
+            action = "updated" if data and data.get("updated") else "saved"
+            return f"{prefix} **Monthly income of ₹{entities['amount']} {action} for {data['month']}/{data['year']}.**"
+        return "❌ **Income not saved.** Please specify your monthly income amount. (e.g., 'My salary is 50000')"
+
     return "🙏 I'm sorry, I didn't quite understand that. Could you try rephrasing? I'm still learning!"
