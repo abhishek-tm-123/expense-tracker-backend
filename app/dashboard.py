@@ -13,15 +13,21 @@ router = APIRouter(prefix="/dashboard")
 
 def calculate_health_score(total_spent, income, daily_values):
     if income <= 0:
-        return 50, "Moderate"
+        return None, "Pending Income"
 
     savings = income - total_spent
     savings_rate = savings / income
     expense_ratio = total_spent / income
     
     avg_daily = total_spent / len(daily_values) if daily_values else 0
-    std_dev = np.std(daily_values) if daily_values else 0
-    volatility_ratio = std_dev / avg_daily if avg_daily > 0 else 0
+    # Volatility Check
+    if avg_daily <= 0 or not daily_values or len(daily_values) < 2:
+        volatility_ratio = 0
+    else:
+        std_dev = np.std(daily_values)
+        volatility_ratio = std_dev / avg_daily
+        # Clamp volatility to avoid extreme values
+        volatility_ratio = min(volatility_ratio, 2.0)
 
     # 1. Savings Score (50%)
     if savings_rate >= 0.3: savings_score = 100
@@ -36,10 +42,11 @@ def calculate_health_score(total_spent, income, daily_values):
     elif expense_ratio <= 1.0: expense_score = 60
     else: expense_score = 20
 
-    # 3. Stability Score (25%)
-    if volatility_ratio < 0.5: stability_score = 100
-    elif volatility_ratio <= 1.0: stability_score = 70
-    else: stability_score = 40
+    # 3. Stability Score (25%) - Inverted: High volatility = Low score
+    if volatility_ratio < 0.3: stability_score = 100
+    elif volatility_ratio <= 0.7: stability_score = 70
+    elif volatility_ratio <= 1.2: stability_score = 40
+    else: stability_score = 20
 
     health_score = int(0.5 * savings_score + 0.25 * expense_score + 0.25 * stability_score)
     health_score = max(0, min(100, health_score))
@@ -268,7 +275,7 @@ async def get_dashboard(
         daily_values = list(trend_map.values())
         health_score, health_status = calculate_health_score(total_expense, income_val, daily_values)
     else:
-        health_score = 0
+        health_score = None
         health_status = "Pending Income"
 
     return {

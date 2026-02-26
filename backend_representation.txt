@@ -1,0 +1,1173 @@
+
+================================================================================
+DIRECTORY STRUCTURE
+================================================================================
+.
+├── alembic/
+│   └── env.py
+├── app/
+│   ├── insights/
+│   │   ├── analyzers.py
+│   │   ├── engine.py
+│   │   └── schemas.py
+│   ├── ml/
+│   │   └── train_intent_model.py
+│   ├── services/
+│   │   ├── chat_handlers.py
+│   │   └── chat_nlp.py
+│   ├── utils/
+│   │   ├── date_parser.py
+│   │   ├── entity_extractor.py
+│   │   └── expense_parser.py
+│   ├── auth.py
+│   ├── budget.py
+│   ├── chat.py
+│   ├── dashboard.py
+│   ├── database.py
+│   ├── expenses.py
+│   ├── main.py
+│   ├── models.py
+│   ├── schemas.py
+│   └── users.py
+├── alembic.ini
+└── requirements.txt
+
+================================================================================
+FILE: app/main.py
+================================================================================
+from fastapi import FastAPI
+from .budget import router as budget_router
+from .auth import router as auth_router
+from .expenses import router as expense_router
+from .users import router as user
+from .database import create_db
+from fastapi.middleware.cors import CORSMiddleware
+from .chat import router as chat
+from .dashboard import router as dashboard_router
+
+import sys
+import asyncio
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+app = FastAPI()
+
+import os
+
+origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,https://expense-tracker-frontend-nine-ruddy.vercel.app")
+origins = [origin.strip() for origin in origins_str.split(",") if origin.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+@app.on_event("startup")
+async def on_startup():
+    await create_db()
+
+@app.get("/test")
+def test():
+    return {"hello":"world"}
+
+app.include_router(auth_router)
+app.include_router(expense_router)
+app.include_router(user)
+app.include_router(chat)
+app.include_router(dashboard_router)
+app.include_router(budget_router)
+
+================================================================================
+FILE: app/models.py
+================================================================================
+from sqlmodel import SQLModel, Field, Relationship
+from typing import Optional, List, Dict
+from datetime import datetime
+from sqlalchemy import JSON, Column
+
+class Users(SQLModel, table=True):
+    user_id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    email: str = Field(index=True, unique=True)
+    password: str
+    profile_image: Optional[str] = Field(default=None)
+    has_onboarded: bool = Field(default=False)
+   
+    # Cascading deletions: when a user is deleted, all their data goes too
+    expenses: List["Expense"] = Relationship(
+        back_populates="user", 
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    budgets: List["Budget"] = Relationship(
+        back_populates="user", 
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    chat_history: List["ChatHistory"] = Relationship(
+        back_populates="user", 
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    incomes: List["Income"] = Relationship(
+        back_populates="user", 
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+
+class Expense(SQLModel, table=True):
+    exp_id: Optional[int] = Field(default=None, primary_key=True)
+    title: str
+    amount: float
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    category:str = Field(index=True)
+    user_id: int = Field(foreign_key="users.user_id", ondelete="CASCADE")
+
+    user: Optional[Users] = Relationship(back_populates="expenses")
+
+class ChatHistory(SQLModel, table=True):
+    chat_id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.user_id", ondelete="CASCADE")
+    message: str
+    sender: str  # 'user' or 'bot'
+    data: Optional[Dict] = Field(default=None, sa_column=Column(JSON))
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+    user: Optional[Users] = Relationship(back_populates="chat_history")
+
+class Budget(SQLModel, table=True):
+    budget_id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.user_id", ondelete="CASCADE")
+    category: Optional[str]  = Field(default=None, index=True)
+    amount: float = Field(gt=0)
+    month: int = Field(ge=1, le=12)
+    year: int = Field(ge=2000)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    user: Optional[Users] = Relationship(back_populates="budgets")
+
+class Income(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.user_id", ondelete="CASCADE")
+    amount: float = Field(gt=0)
+    month: int = Field(ge=1, le=12)
+    year: int = Field(ge=2000)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    user: Optional[Users] = Relationship(back_populates="incomes")
+
+================================================================================
+FILE: app/schemas.py
+================================================================================
+from pydantic import BaseModel
+
+class Register(BaseModel):
+    name:str
+    email:str
+    password:str
+    
+class Login(BaseModel):
+    email:str
+    password:str
+    
+class UpdateProfile(BaseModel):
+    name: str | None = None
+    email: str | None = None
+
+class ExpenseCreate(BaseModel):
+    title:str
+    amount:int
+    category:str
+
+class chatMessage(BaseModel):
+    message: str
+
+class chatHistoryMessage(BaseModel):
+    user_id: int
+    message: str
+    sender: str  # 'user' or 'bot'
+
+class BudgetCreate(BaseModel):
+    category: str | None = None
+    amount: float
+    month: int
+    year: int
+    
+class BudgetRead(BaseModel):
+    budget_id: int
+    category: str | None = None
+    amount: float
+    month: int
+    year: int
+
+class ChangePassword(BaseModel):
+    old_password: str
+    new_password: str
+
+================================================================================
+FILE: app/database.py
+================================================================================
+from sqlmodel import SQLModel
+from sqlalchemy.ext.asyncio import create_async_engine,AsyncSession
+from sqlalchemy.orm import sessionmaker
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_async_engine(
+    DATABASE_URL, 
+    echo=True, 
+    pool_pre_ping=True,
+    connect_args={"ssl": "require"}
+)
+
+async def create_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+
+AsyncSessionLocal = sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
+async def get_session():
+    async with AsyncSessionLocal() as session:
+        yield session
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(create_db())
+    print("Database tables synchronized successfully.")
+
+================================================================================
+FILE: app/auth.py
+================================================================================
+from fastapi import APIRouter,HTTPException,Header,Depends,Request,Response
+from passlib.context import CryptContext
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession as Session
+from jose import jwt,JWTError
+from datetime import datetime,timedelta
+import os
+
+from .schemas import Register,Login
+from .database import get_session
+from .models import Users
+
+router = APIRouter(prefix="/auth")
+pwd = CryptContext(schemes=["argon2"],deprecated="auto")
+
+SECRET = os.getenv("SECRET_KEY")
+ALGO = "HS256"
+
+def create_token(data:dict,expires_minutes:int):
+    to_encode = data.copy()
+    expire = datetime.utcnow()+timedelta(minutes=expires_minutes)
+    to_encode.update({"exp":expire})
+    return jwt.encode(to_encode,SECRET,ALGO)
+
+def get_current_user(authorization: str = Header(None)):
+    if authorization is None:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    try:
+        scheme, token = authorization.split()  # Expect "Bearer <token>"
+        if scheme.lower() != "bearer":
+            raise HTTPException(status_code=401, detail="Invalid auth scheme")
+        payload = jwt.decode(token, SECRET, algorithms=[ALGO])
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+        return int(user_id)
+    except (JWTError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+@router.post("/register")
+async def register(user:Register,session:Session = Depends(get_session)):
+    result = await session.execute(select(Users).where(Users.email == user.email))
+    exists = result.scalars().first()
+    if exists:
+        raise HTTPException(409,"Email already exists")
+    new_user = Users(email=user.email,password=pwd.hash(user.password),name=user.name)
+    session.add(new_user)
+    await session.commit()
+    return {"message" : "User created"}
+
+@router.post("/login")
+async def login(user: Login,response:Response,session:Session=Depends(get_session)):
+    result = await session.execute(select(Users).where(Users.email == user.email))
+    db_user = result.scalars().first()
+    if not db_user or not pwd.verify(user.password,db_user.password):
+        raise HTTPException(401,"Invalid credentials")
+    access = create_token({"sub":str(db_user.user_id)},2)
+    refresh = create_token({"sub":str(db_user.user_id)},60*24*7)  # 7 days
+    # Set refresh token in secure httpOnly cookie
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh,
+        httponly=True,
+        secure=True,     # set True when using HTTPS
+        samesite="none",
+        path="/",
+        max_age=60*60*24*7  # 7 days
+    )
+    return {"access_token": access}
+
+@router.post("/refresh")
+async def refresh_token(request: Request,session:Session=Depends(get_session)):
+    refresh_token = request.cookies.get("refresh_token")
+    
+    if not refresh_token:
+        print("DEBUG: Refresh token cookie is MISSING")
+        raise HTTPException(401, "Refresh token missing")
+
+    try:
+        payload = jwt.decode(refresh_token, SECRET, algorithms=[ALGO])
+        user_id = payload.get("sub")
+        
+        if user_id is None:
+             print("DEBUG: Token payload invalid (no sub)")
+             raise HTTPException(401, "Invalid token payload")
+
+        # Verify user exists in DB
+        user = await session.get(Users, int(user_id))
+        if not user:
+            print(f"DEBUG: User {user_id} not found in DB")
+            raise HTTPException(401, "User no longer exists")
+
+        new_access = create_token({"sub": str(user_id)}, 2)
+        print("DEBUG: Token refreshed successfully")
+
+        return {"access_token": new_access}
+
+    except JWTError as e:
+        print(f"DEBUG: JWT Error: {str(e)}")
+        if "Signature has expired" in str(e):
+            raise HTTPException(401, "Refresh token expired")
+        raise HTTPException(401, "Invalid refresh token")
+
+================================================================================
+FILE: app/dashboard.py
+================================================================================
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import select, func
+from sqlmodel.ext.asyncio.session import AsyncSession as Session
+from datetime import datetime, timedelta, time
+import asyncio
+import numpy as np
+
+from .auth import get_current_user
+from .database import get_session
+from .models import Expense, Budget
+
+router = APIRouter(prefix="/dashboard")
+
+def calculate_health_score(total_spent, income, daily_values):
+    if income <= 0:
+        return 50, "Moderate"
+
+    savings = income - total_spent
+    savings_rate = savings / income
+    expense_ratio = total_spent / income
+    
+    avg_daily = total_spent / len(daily_values) if daily_values else 0
+    std_dev = np.std(daily_values) if daily_values else 0
+    volatility_ratio = std_dev / avg_daily if avg_daily > 0 else 0
+
+    # 1. Savings Score (50%)
+    if savings_rate >= 0.3: savings_score = 100
+    elif savings_rate >= 0.15: savings_score = 80
+    elif savings_rate >= 0.05: savings_score = 60
+    elif savings_rate >= 0: savings_score = 40
+    else: savings_score = 20
+
+    # 2. Expense Score (25%)
+    if expense_ratio <= 0.6: expense_score = 100
+    elif expense_ratio <= 0.8: expense_score = 80
+    elif expense_ratio <= 1.0: expense_score = 60
+    else: expense_score = 20
+
+    # 3. Stability Score (25%)
+    if volatility_ratio < 0.5: stability_score = 100
+    elif volatility_ratio <= 1.0: stability_score = 70
+    else: stability_score = 40
+
+    health_score = int(0.5 * savings_score + 0.25 * expense_score + 0.25 * stability_score)
+    health_score = max(0, min(100, health_score))
+
+    if health_score >= 80: status = "Excellent"
+    elif health_score >= 60: status = "Good"
+    elif health_score >= 40: status = "Moderate"
+    elif health_score >= 20: status = "Risky"
+    else: status = "Critical"
+
+    return health_score, status
+
+def get_date_range(range: str, start_date_str: str = None, end_date_str: str = None):
+    today = datetime.utcnow().date()
+
+    if range == "week":
+        start_date = today - timedelta(days=7)
+        end_date = today
+    elif range == "month":
+        start_date = today.replace(day=1)
+        end_date = today
+    elif range == "custom":
+        if not start_date_str or not end_date_str:
+            raise HTTPException(400, "Custom range requires start_date and end_date (YYYY-MM-DD)")
+        try:
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+    else:
+        raise HTTPException(400, "Invalid range. Use 'week', 'month', 'custom'")
+
+    start_dt = datetime.combine(start_date, time.min)   # 00:00:00
+    end_dt   = datetime.combine(end_date, time.max)        # 23:59:59.999999
+
+    return start_dt, end_dt
+
+
+@router.get("")
+async def get_dashboard(
+    range: str,
+    start_date: str = None,
+    end_date: str = None,
+    session: Session = Depends(get_session),
+    current_user: int = Depends(get_current_user)
+):
+    start_dt, end_dt = get_date_range(range, start_date, end_date)
+    
+    # --- 1. Main Range Aggregations ---
+    # Total Spent
+    stmt_total = select(func.sum(Expense.amount)).where(
+        Expense.user_id == current_user,
+        Expense.created_at >= start_dt,
+        Expense.created_at <= end_dt
+    )
+    
+    # Category Breakdown
+    stmt_cats = select(Expense.category, func.sum(Expense.amount)).where(
+        Expense.user_id == current_user,
+        Expense.created_at >= start_dt,
+        Expense.created_at <= end_dt
+    ).group_by(Expense.category)
+
+    # Trends (Group by Date)
+    stmt_trends = select(func.date(Expense.created_at), func.sum(Expense.amount)).where(
+        Expense.user_id == current_user,
+        Expense.created_at >= start_dt,
+        Expense.created_at <= end_dt
+    ).group_by(func.date(Expense.created_at))
+
+    # --- 2. Previous Period (for Change %) ---
+    period_days = (end_dt - start_dt).days + 1
+    prev_start = start_dt - timedelta(days=period_days)
+    prev_end = start_dt - timedelta(seconds=1)
+    
+    stmt_prev = select(func.sum(Expense.amount)).where(
+        Expense.user_id == current_user,
+        Expense.created_at >= prev_start,
+        Expense.created_at <= prev_end
+    )
+    
+    # --- 3. Monthly (for Budget) ---
+    now = datetime.utcnow()
+    month, year = now.month, now.year
+    month_start = datetime(year, month, 1)
+
+    # Monthly Category Spend
+    stmt_month_cats = select(Expense.category, func.sum(Expense.amount)).where(
+        Expense.user_id == current_user,
+        Expense.created_at >= month_start
+    ).group_by(Expense.category)
+    
+    # Budgets
+    stmt_budgets = select(Budget).where(
+        Budget.user_id == current_user,
+        Budget.month == month,
+        Budget.year == year
+    )
+    
+    # Income (New)
+    from .models import Income
+    stmt_income = select(Income).where(
+        Income.user_id == current_user,
+        Income.month == month,
+        Income.year == year
+    )
+
+    # EXECUTE QUERIES SEQUENTIALLY
+    
+    # 1. Total
+    result_total = await session.execute(stmt_total)
+    total_expense = result_total.scalar() or 0
+    
+    # 2. Categories
+    result_cats = await session.execute(stmt_cats)
+    categories_rows = result_cats.all()
+    categories = [{"name": r[0], "amount": r[1]} for r in categories_rows]
+    
+    # 3. Trends
+    result_trends = await session.execute(stmt_trends)
+    trends_rows = result_trends.all()
+    
+    # 4. Prev Total
+    result_prev = await session.execute(stmt_prev)
+    prev_total = result_prev.scalar() or 0
+    
+    # 5. Month Cats
+    result_month_cats = await session.execute(stmt_month_cats)
+    month_cats_rows = result_month_cats.all()
+    monthly_cat_spent = {r[0]: r[1] for r in month_cats_rows}
+    monthly_total = sum(monthly_cat_spent.values())
+    
+    # 6. Budgets
+    result_budgets = await session.execute(stmt_budgets)
+    budgets = result_budgets.scalars().all()
+    
+    # 7. Income
+    result_income = await session.execute(stmt_income)
+    income_record = result_income.scalars().first()
+    income_val = income_record.amount if income_record else 0
+
+    # --- PROCESS DATA ---
+    
+    # Change Percent
+    if prev_total > 0:
+        change_percent = round(((total_expense - prev_total) / prev_total) * 100, 1)
+    else:
+        change_percent = 100.0 if total_expense > 0 else 0.0
+
+    # Avg Daily
+    days_count = max((end_dt - start_dt).days + 1, 1)
+    avg_daily = round(total_expense / days_count, 2) if days_count > 0 else 0
+
+    # Trend Formatting
+    trend_map = {}
+    curr = start_dt.date()
+    while curr <= end_dt.date():
+        trend_map[curr.strftime("%Y-%m-%d")] = 0
+        curr += timedelta(days=1)
+        
+    for date_val, amount in trends_rows:
+        k = str(date_val)
+        if k in trend_map:
+            trend_map[k] = amount
+            
+    sorted_keys = sorted(trend_map.keys())
+    trends_labels = []
+    trends_values = []
+    for k in sorted_keys:
+        d_obj = datetime.strptime(k, "%Y-%m-%d")
+        trends_labels.append(d_obj.strftime("%d %b"))
+        trends_values.append(trend_map[k])
+        
+    trends = {
+        "labels": trends_labels,
+        "values": trends_values
+    }
+    
+    # Advanced Insights Engine
+    from app.insights.engine import generate_insights
+    structured_insights = await generate_insights(session, current_user)
+    insights = [i.message for i in structured_insights]
+    
+    budget_list = []
+    overall_budget = None
+    for b in budgets:
+        used = monthly_cat_spent.get(b.category, 0) if b.category else monthly_total
+        budget_list.append({
+            "category": b.category if b.category else "overall",
+            "limit": b.amount,
+            "used": used,
+            "percent": round((used / b.amount) * 100, 1) if b.amount > 0 else 0
+        })
+        if not b.category:
+            overall_budget = b
+
+    if overall_budget:
+        remaining_budget = overall_budget.amount - monthly_total
+    else:
+        remaining_budget = sum(b.amount - monthly_cat_spent.get(b.category, 0) for b in budgets if b.category)
+
+    budget_exceeded = remaining_budget < 0
+
+    # Financial Health Score
+    total_budget = sum(b.amount for b in budgets)
+    income_missing = income_val <= 0
+    if not income_missing:
+        daily_values = list(trend_map.values())
+        health_score, health_status = calculate_health_score(total_expense, income_val, daily_values)
+    else:
+        health_score = 0
+        health_status = "Pending Income"
+
+    return {
+        "summary": {
+            "totalSpent": total_expense,
+            "totalBudget": total_budget,
+            "avgDaily": avg_daily,
+            "remainingBudget": round(remaining_budget, 2),
+            "budgetExceeded": budget_exceeded,
+            "changePercent": change_percent,
+            "income": income_val,
+            "incomeMissing": income_missing,
+            "savings": round(income_val - total_expense, 2) if not income_missing else 0,
+            "healthScore": health_score,
+            "healthStatus": health_status,
+            "message": "Add your monthly income through chat to unlock Financial Health Score." if income_missing else None
+        },
+        "categories": categories,
+        "trends": trends,
+        "insights": insights,
+        "budgets": budget_list,
+    }
+
+================================================================================
+FILE: app/expenses.py
+================================================================================
+from fastapi import APIRouter,Depends,HTTPException
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession as Session
+
+from .auth import get_current_user
+from .database import get_session
+from .schemas import ExpenseCreate
+from .models import Expense
+
+router = APIRouter(prefix="/expenses")
+
+@router.post("/create")
+async def create_expense(data:ExpenseCreate,session:Session=Depends(get_session),current_user:int=Depends(get_current_user)):
+    expense = Expense(
+        user_id=current_user,
+        title=data.title,
+        amount=data.amount,
+        category=data.category
+    )
+    session.add(expense)
+    await session.commit()
+    return {"messege":"Expense created"}
+
+@router.get("/get")
+async def get_allexpenses(session:Session=Depends(get_session),current_user:int=Depends(get_current_user)):
+    user_id = current_user
+    result = await session.execute(select(Expense).where(Expense.user_id == user_id))
+    expenses = result.scalars().all()
+    return expenses
+
+@router.get("/get/{expense_id}")
+async def get_expense(expense_id:int,session:Session=Depends(get_session),current_user:int=Depends(get_current_user)):
+    result = await session.execute(select(Expense).where(Expense.exp_id == expense_id))
+    expense = result.scalars().first()
+    return expense
+
+@router.put("/edit/{expense_id}")
+async def edit_expenses(
+    expense_id:int,
+    data:ExpenseCreate,
+    session:Session = Depends(get_session),
+    current_user:int=Depends(get_current_user)
+):
+    result = await session.execute(
+        select(Expense).where(Expense.exp_id==expense_id)
+    )
+    expense = result.scalars().first()
+
+    if not expense:
+        raise HTTPException(404,"Expense not found")
+    
+    if expense.user_id != current_user:
+        raise HTTPException(403,"you cannot edit this expense")
+    # Update fields
+    expense.title = data.title
+    expense.amount = data.amount
+    expense.category = data.category
+
+    session.add(expense)
+    await session.commit()
+    await session.refresh(expense)
+    return {"message": "Expense updated", "expense": expense}
+
+
+@router.delete("/dlt/{expense_id}")
+async def delete_expense(
+    expense_id: int,
+    session: Session = Depends(get_session),
+    current_user: int = Depends(get_current_user)
+):
+    result = await session.execute(
+        select(Expense).where(Expense.exp_id == expense_id)
+    )
+
+    expense = result.scalars().first()
+
+    if not expense:
+        raise HTTPException(404, "Expense not found")
+
+    if expense.user_id != current_user:
+        raise HTTPException(403, "You cannot delete this expense")
+
+    session.delete(expense)
+    await session.commit()
+
+    return {"message": "Expense deleted"}
+
+================================================================================
+FILE: app/chat.py
+================================================================================
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlmodel.ext.asyncio.session import AsyncSession as Session
+from sqlmodel import select
+from pydantic import BaseModel
+import csv
+from pathlib import Path
+import logging
+from datetime import datetime
+
+from .auth import get_current_user
+from .database import get_session
+from .models import ChatHistory
+from .schemas import chatMessage
+from .utils.entity_extractor import extract_entities, get_professional_response
+from .utils.expense_parser import process_expense
+
+# Import Services
+from .services.chat_nlp import predict_intent, retrain_model_logic, CONFIDENCE_THRESHOLD
+from .services.chat_handlers import (
+    handle_add_expense, 
+    handle_total_expenses, 
+    handle_show_expenses, 
+    handle_set_budget, 
+    handle_show_budget,
+    handle_add_income,
+    save_chat_history
+)
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/chat")
+
+@router.get("/history")
+async def get_chat_history(session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
+    stmt = select(ChatHistory).where(ChatHistory.user_id == current_user).order_by(ChatHistory.timestamp)
+    result = await session.execute(stmt)
+    chat_history = result.scalars().all()
+    return [
+        { 
+            "sender": c.sender, 
+            "text": c.message, 
+            "time": c.timestamp, 
+            "data": c.data.get("expenses") if (c.data and isinstance(c.data, dict) and "expenses" in c.data) else c.data
+        }
+        for c in chat_history
+    ]
+
+@router.delete("/clear")
+async def clear_chat(session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
+    stmt = select(ChatHistory).where(ChatHistory.user_id == current_user)
+    result = await session.execute(stmt)
+    chats = result.scalars().all()
+    for chat in chats:
+        await session.delete(chat)
+    await session.commit()
+    logger.info(f"Chat history cleared for user {current_user}")
+    return {"message": "Chat history cleared"}
+
+class LearnRequest(BaseModel):
+    text: str
+    intent: str
+
+@router.post("/learn")
+async def learn_from_chat(request: LearnRequest, session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
+    valid_intents = ["add_expense", "show_expenses", "total_expenses", "set_budget", "show_budget", "unknown"]
+    if request.intent not in valid_intents:
+         raise HTTPException(status_code=400, detail=f"Invalid intent. Must be one of {valid_intents}")
+
+    dataset_path = Path(__file__).parent / "ml" / "intent_dataset.csv"
+    try:
+        with open(dataset_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([request.text, request.intent])
+        logger.info(f"New training example added: '{request.text}' -> {request.intent}")
+    except Exception as e:
+        logger.error(f"Failed to write to dataset: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to write to dataset: {str(e)}")
+        
+    return {"message": "New training example added successfully"}
+
+@router.get("/suggestions")
+async def get_chat_suggestions(q: str = Query("", min_length=1), current_user: int = Depends(get_current_user), session: Session = Depends(get_session)):
+    query = q.lower().strip()
+    suggestions = []
+    
+    templates = [
+        "Show my expenses", "Show budget", "Total expenses this month",
+        "How much did I spend on food?", "Set budget for food 5000", "Clear chat history"
+    ]
+    
+    import re
+    if re.match(r'^\d+$', query):
+        suggestions.append(f"Spent {query} on food")
+    
+    dataset_path = Path(__file__).parent / "ml" / "intent_dataset.csv"
+    try:
+        if dataset_path.exists():
+            with open(dataset_path, "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                next(reader, None)
+                for row in reader:
+                    if len(row) >= 1 and query in row[0].lower():
+                        suggestions.append(row[0].strip())
+    except Exception: pass
+
+    unique_suggestions = list(dict.fromkeys(suggestions))
+    unique_suggestions.sort()
+    return {"suggestions": unique_suggestions[:10]}
+
+@router.post("/retrain")
+async def retrain_model(session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
+    try:
+        retrain_model_logic()
+        return {"message": "Model retrained and reloaded successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Training failed: {str(e)}")
+
+@router.post("/message")
+async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
+    text = chatmessage.message.strip()
+    
+    # Conversational Learning
+    lower_text = text.lower()
+    if lower_text.startswith(("correction:", "learn:", "actually, it's")):
+        potential_intent = lower_text.split(":")[-1].strip() if ":" in lower_text else lower_text.split("it's")[-1].strip()
+        valid_intents = ["add_expense", "show_expenses", "total_expenses", "set_budget", "show_budget", "unknown"]
+        matched_intent = next((i for i in valid_intents if i in potential_intent), None)
+        
+        if matched_intent:
+            stmt = select(ChatHistory).where(ChatHistory.user_id == current_user, ChatHistory.sender == 'user').order_by(ChatHistory.timestamp.desc()).limit(1)
+            result = await session.execute(stmt)
+            last_message = result.scalars().first()
+            if last_message:
+                learn_req = LearnRequest(text=last_message.message, intent=matched_intent)
+                await learn_from_chat(learn_req, session, current_user)
+                await retrain_model(session, current_user)
+                response_msg = f"✅ Learned: '{last_message.message}' is '{matched_intent}'."
+                await save_chat_history(current_user, text, 'user', session)
+                await save_chat_history(current_user, response_msg, 'bot', session)
+                return {"response": response_msg}
+
+    await save_chat_history(current_user, chatmessage.message, 'user', session)
+    entities = extract_entities(text)
+
+    try:
+        result = predict_intent(text)
+        probs = result["probs"]
+        # Boosts omitted for brevity in summary, but present in source
+        intent = max(probs, key=probs.get)
+        confidence = probs[intent]
+        if confidence < CONFIDENCE_THRESHOLD: intent = "fallback"
+    except Exception: intent = "fallback"
+
+    response_data = None
+    data_updated = False
+    if intent == "add_expense":
+        try:
+            parsed = process_expense(text)
+            entities["amount"] = parsed["amount"]
+            entities["category"] = parsed["category"]
+        except: pass
+        response_message, data_updated = await handle_add_expense(entities, current_user, session)
+            
+    elif intent == "total_expenses":
+        response_message = await handle_total_expenses(entities, current_user, session)
+    elif intent == "show_expenses":
+        response_message, response_data = await handle_show_expenses(entities, current_user, session)
+    elif intent == "set_budget":
+        response_message, data_updated = await handle_set_budget(entities, current_user, session)
+    elif intent == "show_budget":
+        response_message, response_data = await handle_show_budget(entities, current_user, session)
+    elif intent == "add_income":
+        response_message, data_updated = await handle_add_income(entities, current_user, session)
+    else: response_message = get_professional_response("fallback", entities)
+    
+    await save_chat_history(current_user, response_message, 'bot', session, data=response_data)
+    return {"response": response_message, "data_updated": data_updated, "data": response_data}
+
+================================================================================
+FILE: app/budget.py
+================================================================================
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession as Session
+
+from .auth import get_current_user
+from .database import get_session
+from .schemas import BudgetCreate,BudgetRead
+from .models import Budget, Expense
+
+router = APIRouter(prefix="/budget")
+
+@router.post("/", response_model=BudgetRead)
+async def create_or_update_budget(
+    data: BudgetCreate,
+    session: Session = Depends(get_session),
+    current_user: int = Depends(get_current_user),
+):
+    statement = select(Budget).where(
+        Budget.user_id == current_user,
+        Budget.category == data.category,
+        Budget.month == data.month,
+        Budget.year == data.year,
+    )
+
+    result = await session.execute(statement)
+    budget = result.scalars().first()
+
+    if budget:
+        budget.amount = data.amount
+    else:
+        budget = Budget(
+            user_id=current_user,
+            category=data.category,
+            amount=data.amount,
+            month=data.month,
+            year=data.year,
+        )
+        session.add(budget)
+
+    await session.commit()
+    await session.refresh(budget)
+
+    return {"message": "Budget created/updated successfully", "budget": budget}
+
+================================================================================
+FILE: app/users.py
+================================================================================
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
+from typing import Optional
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession as Session
+
+from app.models import Users
+from .auth import get_current_user, pwd
+from .database import get_session
+from .schemas import ChangePassword
+
+import cloudinary
+import cloudinary.uploader
+from fastapi.concurrency import run_in_threadpool
+import os
+
+cloudinary.config(
+    cloud_name="dnkkkrerz",
+    api_key="391655656674467",
+    api_secret="bVtI8VxVqW4ZLLuZGlFBfycGujM",
+    secure=True
+)
+
+router = APIRouter(prefix="/user")
+
+@router.get("/me")
+async def read_current_user(session:Session=Depends(get_session),current_user:int=Depends(get_current_user)):
+    result = await session.execute(select(Users).where(Users.user_id == current_user))
+    user = result.scalars().first()
+    if not user: raise HTTPException(404,"User not found")
+    return {
+        "name": user.name, "email": user.email, 
+        "profile_image": user.profile_image, "has_onboarded": user.has_onboarded
+    }
+
+@router.post("/change-password")
+async def change_password(data: ChangePassword, session: Session = Depends(get_session), current_user_id: int = Depends(get_current_user)):
+    result = await session.execute(select(Users).where(Users.user_id == current_user_id))
+    user = result.scalars().first()
+    if not user: raise HTTPException(404, "User not found")
+    if not pwd.verify(data.old_password, user.password):
+        raise HTTPException(status_code=400, detail="Current password incorrect")
+    user.password = pwd.hash(data.new_password)
+    session.add(user)
+    await session.commit()
+    return {"message": "Password changed successfully"}
+
+@router.put("/profile")
+async def update_profile(
+    name: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    profile_image: Optional[UploadFile] = File(None),
+    session: Session = Depends(get_session),
+    current_user_id: int = Depends(get_current_user)
+):
+    result = await session.execute(select(Users).where(Users.user_id == current_user_id))
+    user = result.scalars().first()
+    if not user: raise HTTPException(404, "User not found")
+    if name is not None: user.name = name
+    if email is not None and email != user.email:
+        user.email = email
+    if profile_image:
+        upload_result = await run_in_threadpool(cloudinary.uploader.upload, profile_image.file, folder="profile_images")
+        user.profile_image = upload_result.get("secure_url")
+    session.add(user)
+    await session.commit()
+    return {"name": user.name, "email": user.email, "profile_image": user.profile_image}
+
+@router.put("/onboarded")
+async def set_onboarded(session: Session = Depends(get_session), current_user_id: int = Depends(get_current_user)):
+    user = await session.get(Users, current_user_id)
+    user.has_onboarded = True
+    session.add(user)
+    await session.commit()
+    return {"has_onboarded": True}
+
+@router.delete("/me")
+async def delete_current_user(session: Session = Depends(get_session), current_user_id: int = Depends(get_current_user)):
+    user = await session.get(Users, current_user_id)
+    if user.profile_image and "cloudinary.com" in user.profile_image:
+        try:
+             # Cloudinary cleanup logic omitted for brevity
+             pass
+        except: pass
+    await session.delete(user)
+    await session.commit()
+    return {"message": "Deleted"}
+
+================================================================================
+FILE: app/insights/analyzers.py
+================================================================================
+from datetime import datetime, timedelta
+from typing import List, Dict
+from .schemas import Insight, InsightType
+
+def analyze_budget_health(budgets: List[Dict], monthly_spending: Dict[str, float], total_spent_month: float) -> List[Insight]:
+    insights = []
+    for budget in budgets:
+        limit = budget.get("amount", 0)
+        label = budget.get("category", "Overall").title()
+        spent = monthly_spending.get(budget.get("category"), 0) if budget.get("category") else total_spent_month
+        usage = (spent / limit) * 100 if limit > 0 else 0
+        if usage >= 100:
+            insights.append(Insight(type=InsightType.CRITICAL, message=f"Budget exceeded for {label}.", metric=f"₹{spent}/₹{limit}", priority=10))
+        elif usage >= 90:
+            insights.append(Insight(type=InsightType.WARNING, message=f"90% of {label} budget used.", metric=f"{int(usage)}%", priority=8))
+    return insights
+
+def analyze_spending_trends(curr_avg, prev_avg) -> List[Insight]:
+    insights = []
+    if prev_avg > 0:
+        change = ((curr_avg - prev_avg) / prev_avg) * 100
+        if change > 20:
+            insights.append(Insight(type=InsightType.WARNING, message="Spending higher than last month.", metric=f"+{change:.1f}%", priority=6))
+        elif change < -10:
+            insights.append(Insight(type=InsightType.POSITIVE, message="Spending lower than last month!", metric=f"{change:.1f}%", priority=5))
+    return insights
+
+def detect_anomalies(recent_expenses) -> List[Insight]:
+    # Simple Z-score logic for anomalous spikes
+    return []
+
+================================================================================
+FILE: app/insights/engine.py
+================================================================================
+from typing import List
+from datetime import datetime, timedelta
+from sqlmodel import select, func
+from sqlmodel.ext.asyncio.session import AsyncSession
+from app.models import Expense, Budget
+from .schemas import Insight
+from .analyzers import analyze_budget_health, analyze_spending_trends, detect_anomalies
+
+async def generate_insights(session: AsyncSession, user_id: int) -> List[Insight]:
+    today = datetime.utcnow().date()
+    month_start = today.replace(day=1)
+    
+    # Fetch Data
+    result_cats = await session.execute(select(Expense.category, func.sum(Expense.amount)).where(Expense.user_id == user_id, Expense.created_at >= month_start).group_by(Expense.category))
+    monthly_cat_spent = {r[0]: r[1] for r in result_cats.all()}
+    total_month_spent = sum(monthly_cat_spent.values())
+    
+    result_budgets = await session.execute(select(Budget).where(Budget.user_id == user_id, Budget.month == today.month, Budget.year == today.year))
+    budgets = [{"category": b.category, "amount": b.amount} for b in result_budgets.scalars().all()]
+    
+    # Run Analyzers
+    all_insights = []
+    all_insights.extend(analyze_budget_health(budgets, monthly_cat_spent, total_month_spent))
+    # ... more analyzers
+    all_insights.sort(key=lambda x: x.priority, reverse=True)
+    return all_insights
+
+================================================================================
+FILE: app/services/chat_nlp.py
+================================================================================
+import joblib
+from pathlib import Path
+from nltk.stem import WordNetLemmatizer
+
+model_path = Path(__file__).parent.parent / "ml" / "intent_pipeline_v1.pkl"
+intent_pipeline = None
+try: intent_pipeline = joblib.load(model_path)
+except: pass
+
+CONFIDENCE_THRESHOLD = 0.5
+
+def predict_intent(text: str) -> dict:
+    if intent_pipeline is None:
+        # Rule-based fallback
+        return {"intent": "unknown", "probs": {"unknown": 1.0}}
+    processed = text.lower() # Simple
+    probs = intent_pipeline.predict_proba([processed])[0]
+    intent = intent_pipeline.classes_[probs.argmax()]
+    return {"intent": intent, "probs": dict(zip(intent_pipeline.classes_, probs))}
+
+================================================================================
+FILE: app/services/chat_handlers.py
+================================================================================
+from datetime import datetime
+from sqlmodel import select
+from ..models import Expense, Budget, ChatHistory, Income
+
+async def handle_add_expense(entities, user_id, session):
+    expense = Expense(user_id=user_id, amount=entities["amount"], category=entities["category"], title=f"{entities['category']} expense")
+    session.add(expense)
+    await session.commit()
+    return "✅ Recorded.", True
+
+async def handle_show_expenses(entities, user_id, session):
+    # Complex date range and contextual nav logic
+    return "📝 Expenses...", {"expenses": []}
+
+# ... more handlers (Budget, Income, etc.)
+
+================================================================================
+FILE: requirements.txt
+================================================================================
+alembic==1.17.2
+fastapi==0.122.0
+sqlmodel==0.0.27
+uvicorn==0.38.0
+scikit-learn==1.8.0
+pandas==2.3.3
+joblib==1.5.3
+python-dotenv==1.2.1
+python-jose==3.5.0
+passlib==1.7.4
+cloudinary==1.44.1
+
+================================================================================
+FILE: alembic/env.py
+================================================================================
+import os
+from alembic import context
+from sqlmodel import SQLModel
+from app.models import Users, Expense, Budget, ChatHistory
+from dotenv import load_dotenv
+
+load_dotenv()
+config = context.config
+target_metadata = SQLModel.metadata
+db_url = os.getenv("DATABASE_URL")
+if db_url: config.set_main_option("sqlalchemy.url", db_url)
+
+# Migration functions (offline/online) included in source...

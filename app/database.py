@@ -6,10 +6,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
+
 DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is not set.")
+
 engine = create_async_engine(
     DATABASE_URL, 
-    echo=True, 
+    echo=DEBUG_MODE, 
     pool_pre_ping=True,
     connect_args={"ssl": "require"}
 )

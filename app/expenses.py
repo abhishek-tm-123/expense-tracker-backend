@@ -34,8 +34,12 @@ async def get_allexpenses(session:Session=Depends(get_session),current_user:int=
 
 @router.get("/get/{expense_id}")
 async def get_expense(expense_id:int,session:Session=Depends(get_session),current_user:int=Depends(get_current_user)):
-    result = await session.execute(select(Expense).where(Expense.exp_id == expense_id))
+    result = await session.execute(
+        select(Expense).where(Expense.exp_id == expense_id, Expense.user_id == current_user)
+    )
     expense = result.scalars().first()
+    if not expense:
+        raise HTTPException(404, "Expense not found or unauthorized")
     return expense
 
 @router.put("/edit/{expense_id}")
@@ -46,15 +50,13 @@ async def edit_expenses(
     current_user:int=Depends(get_current_user)
 ):
     result = await session.execute(
-        select(Expense).where(Expense.exp_id==expense_id)
+        select(Expense).where(Expense.exp_id==expense_id, Expense.user_id == current_user)
     )
     expense = result.scalars().first()
 
     if not expense:
-        raise HTTPException(404,"Expense not found")
+        raise HTTPException(404,"Expense not found or unauthorized")
     
-    if expense.user_id != current_user:
-        raise HTTPException(403,"you cannot edit this expense")
     # Update fields
     expense.title = data.title
     expense.amount = data.amount
@@ -73,16 +75,13 @@ async def delete_expense(
     current_user: int = Depends(get_current_user)
 ):
     result = await session.execute(
-        select(Expense).where(Expense.exp_id == expense_id)
+        select(Expense).where(Expense.exp_id == expense_id, Expense.user_id == current_user)
     )
 
     expense = result.scalars().first()
 
     if not expense:
-        raise HTTPException(404, "Expense not found")
-
-    if expense.user_id != current_user:
-        raise HTTPException(403, "You cannot delete this expense")
+        raise HTTPException(404, "Expense not found or unauthorized")
 
     session.delete(expense)
     await session.commit()

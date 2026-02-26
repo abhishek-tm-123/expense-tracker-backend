@@ -13,9 +13,10 @@ from .models import ChatHistory
 from .schemas import chatMessage
 from .utils.entity_extractor import extract_entities, get_professional_response
 from .utils.expense_parser import process_expense
+import bleach
 
 # Import Services
-from .services.chat_nlp import predict_intent, retrain_model_logic, CONFIDENCE_THRESHOLD
+from .services.chat_nlp import predict_intent, CONFIDENCE_THRESHOLD
 from .services.chat_handlers import (
     handle_add_expense, 
     handle_total_expenses, 
@@ -56,30 +57,6 @@ async def clear_chat(session: Session = Depends(get_session), current_user: int 
     await session.commit()
     logger.info(f"Chat history cleared for user {current_user}")
     return {"message": "Chat history cleared"}
-
-class LearnRequest(BaseModel):
-    text: str
-    intent: str
-
-@router.post("/learn")
-async def learn_from_chat(request: LearnRequest, session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
-    """Add a new training example to the dataset."""
-    valid_intents = ["add_expense", "show_expenses", "total_expenses", "set_budget", "show_budget", "unknown"]
-    if request.intent not in valid_intents:
-         raise HTTPException(status_code=400, detail=f"Invalid intent. Must be one of {valid_intents}")
-
-    # Append to CSV
-    dataset_path = Path(__file__).parent / "ml" / "intent_dataset.csv"
-    try:
-        with open(dataset_path, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow([request.text, request.intent])
-        logger.info(f"New training example added: '{request.text}' -> {request.intent}")
-    except Exception as e:
-        logger.error(f"Failed to write to dataset: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to write to dataset: {str(e)}")
-        
-    return {"message": "New training example added successfully"}
 
 @router.get("/suggestions")
 async def get_chat_suggestions(q: str = Query("", min_length=1), current_user: int = Depends(get_current_user), session: Session = Depends(get_session)):
@@ -151,50 +128,17 @@ async def get_chat_suggestions(q: str = Query("", min_length=1), current_user: i
     unique_suggestions.sort()
     return {"suggestions": unique_suggestions[:10]}
 
-@router.post("/retrain")
-async def retrain_model(session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
-    """Retrain the intent model with the latest dataset."""
-    try:
-        retrain_model_logic()
-        return {"message": "Model retrained and reloaded successfully"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Training failed: {str(e)}")
-
 @router.post("/message")
 async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get_session), current_user: int = Depends(get_current_user)):
-    text = chatmessage.message.strip()
+    # Sanitization & Length Check
+    dirty_text = chatmessage.message.strip()
+    if len(dirty_text) > 500:
+        raise HTTPException(status_code=400, detail="Message too long (max 500 characters)")
     
-    # --- CONVERSATIONAL LEARNING / CORRECTION LOGIC ---
-    lower_text = text.lower()
-    if lower_text.startswith(("correction:", "learn:", "wrong, it's", "actually, it's")):
-        potential_intent = lower_text.split(":")[-1].strip() if ":" in lower_text else lower_text.split("it's")[-1].strip()
-        
-        valid_intents = ["add_expense", "show_expenses", "total_expenses", "set_budget", "show_budget", "unknown"]
-        matched_intent = next((i for i in valid_intents if i in potential_intent), None)
-        
-        if matched_intent:
-            stmt = select(ChatHistory).where(
-                ChatHistory.user_id == current_user, 
-                ChatHistory.sender == 'user'
-            ).order_by(ChatHistory.timestamp.desc()).limit(1)
-            result = await session.execute(stmt)
-            last_message = result.scalars().first()
-            
-            if last_message:
-                learn_req = LearnRequest(text=last_message.message, intent=matched_intent)
-                await learn_from_chat(learn_req, session, current_user)
-                await retrain_model(session, current_user)
-                
-                response_msg = f"✅ Thanks! I've learned that '{last_message.message}' should be recognized as '{matched_intent}'. I've updated my model."
-                await save_chat_history(current_user, text, 'user', session)
-                await save_chat_history(current_user, response_msg, 'bot', session)
-                return {"response": response_msg}
-            else:
-                response_msg = "⚠ I couldn't find a previous message to learn from."
-                await save_chat_history(current_user, text, 'user', session)
-                await save_chat_history(current_user, response_msg, 'bot', session)
-                return {"response": response_msg}
-
+    text = bleach.clean(dirty_text, tags=[], attributes={}, strip=True)
+    if not text:
+        raise HTTPException(status_code=400, detail="Invalid message content")
+    
     # Standard flow
     await save_chat_history(current_user, chatmessage.message, 'user', session)
 

@@ -9,8 +9,10 @@ class Users(SQLModel, table=True):
     name: str
     email: str = Field(index=True, unique=True)
     password: str
+    is_admin: bool = Field(default=False)
     profile_image: Optional[str] = Field(default=None)
     has_onboarded: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
    
     # Cascading deletions: when a user is deleted, all their data goes too
     expenses: List["Expense"] = Relationship(
@@ -35,9 +37,9 @@ class Expense(SQLModel, table=True):
     exp_id: Optional[int] = Field(default=None, primary_key=True)
     title: str
     amount: float
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
     category:str = Field(index=True)
-    user_id: int = Field(foreign_key="users.user_id", ondelete="CASCADE")
+    user_id: int = Field(foreign_key="users.user_id", ondelete="CASCADE", index=True)
 
     user: Optional[Users] = Relationship(back_populates="expenses")
 

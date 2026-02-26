@@ -12,19 +12,21 @@ from .schemas import Register,Login
 from .database import get_session
 from .models import Users
 
-
+pwd = CryptContext(schemes=["argon2"], deprecated="auto")
 
 router = APIRouter(prefix="/auth")
-pwd = CryptContext(schemes=["argon2"],deprecated="auto")
-
 SECRET = os.getenv("SECRET_KEY")
-ALGO = "HS256"
+if not SECRET:
+    raise RuntimeError("SECRET_KEY environment variable is not set. Application cannot start.")
 
-def create_token(data:dict,expires_minutes:int):
+ALGO = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
+
+def create_token(data:dict, expires_minutes: int = ACCESS_TOKEN_EXPIRE_MINUTES):
     to_encode = data.copy()
-    expire = datetime.utcnow()+timedelta(minutes=expires_minutes)
-    to_encode.update({"exp":expire})
-    return jwt.encode(to_encode,SECRET,ALGO)
+    expire = datetime.utcnow() + timedelta(minutes=expires_minutes)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET, algorithm=ALGO)
 
 def get_current_user(authorization: str = Header(None)):
     if authorization is None:
@@ -59,7 +61,7 @@ async def login(user: Login,response:Response,session:Session=Depends(get_sessio
     db_user = result.scalars().first()
     if not db_user or not pwd.verify(user.password,db_user.password):
         raise HTTPException(401,"Invalid credentials")
-    access = create_token({"sub":str(db_user.user_id)},2)
+    access = create_token({"sub":str(db_user.user_id)})
     refresh = create_token({"sub":str(db_user.user_id)},60*24*7)  # 7 days
     # Set refresh token in secure httpOnly cookie
     response.set_cookie(
@@ -95,7 +97,7 @@ async def refresh_token(request: Request,session:Session=Depends(get_session)):
             print(f"DEBUG: User {user_id} not found in DB")
             raise HTTPException(401, "User no longer exists")
 
-        new_access = create_token({"sub": str(user_id)}, 2)
+        new_access = create_token({"sub": str(user_id)})
         print("DEBUG: Token refreshed successfully")
 
         return {"access_token": new_access}
