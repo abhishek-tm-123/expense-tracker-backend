@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession as Session
 from datetime import datetime, timedelta, time
+from typing import List, Dict, Optional
 import asyncio
 import numpy as np
 
@@ -11,53 +12,122 @@ from .models import Expense, Budget
 
 router = APIRouter(prefix="/dashboard")
 
-def calculate_health_score(total_spent, income, daily_values):
+# --- Helper Functions ---
+
+def safe_division(a: float, b: float) -> float:
+    """Mathematical safety to avoid ZeroDivisionError."""
+    if b == 0:
+        return 0.0
+    return a / b
+
+def compute_volatility(values: List[float]) -> float:
+    """Computes Coefficient of Variation (CV) as a measure of volatility."""
+    if not values or len(values) < 2:
+        return 0.0
+    mean = np.mean(values)
+    if mean <= 0:
+        return 0.0
+    std = np.std(values)
+    return std / mean
+
+def calculate_health_score(
+    total_spent: float,
+    income: float,
+    daily_expenses: List[float],
+    total_budget: Optional[float],
+    income_history: List[float]
+) -> Dict:
+    """
+    Structured Financial Health Index based on professional advisory logic.
+    Returns score, status, and breakdown.
+    """
     if income <= 0:
-        return None, "Pending Income"
+        return {
+            "health_score": None,
+            "health_status": "Insufficient Income Data",
+            "breakdown": {}
+        }
 
-    savings = income - total_spent
-    savings_rate = savings / income
-    expense_ratio = total_spent / income
-    
-    avg_daily = total_spent / len(daily_values) if daily_values else 0
-    # Volatility Check
-    if avg_daily <= 0 or not daily_values or len(daily_values) < 2:
-        volatility_ratio = 0
-    else:
-        std_dev = np.std(daily_values)
-        volatility_ratio = std_dev / avg_daily
-        # Clamp volatility to avoid extreme values
-        volatility_ratio = min(volatility_ratio, 2.0)
-
-    # 1. Savings Score (50%)
-    if savings_rate >= 0.3: savings_score = 100
+    # -- Rule 2: Savings Strength (Weight: 30%) --
+    # Reasoning: Higher savings rates are the primary driver of long-term wealth.
+    savings_rate = safe_division(income - total_spent, income)
+    if savings_rate >= 0.30: savings_score = 100
     elif savings_rate >= 0.15: savings_score = 80
     elif savings_rate >= 0.05: savings_score = 60
     elif savings_rate >= 0: savings_score = 40
-    else: savings_score = 20
+    else: savings_score = 10
 
-    # 2. Expense Score (25%)
-    if expense_ratio <= 0.6: expense_score = 100
-    elif expense_ratio <= 0.8: expense_score = 80
-    elif expense_ratio <= 1.0: expense_score = 60
+    # -- Rule 3: Expense Sustainability (Weight: 20%) --
+    # Reasoning: Living within means is critical for financial stability.
+    expense_ratio = safe_division(total_spent, income)
+    if expense_ratio <= 0.60: expense_score = 100
+    elif expense_ratio <= 0.80: expense_score = 80
+    elif expense_ratio <= 1.00: expense_score = 60
     else: expense_score = 20
 
-    # 3. Stability Score (25%) - Inverted: High volatility = Low score
-    if volatility_ratio < 0.3: stability_score = 100
-    elif volatility_ratio <= 0.7: stability_score = 70
-    elif volatility_ratio <= 1.2: stability_score = 40
-    else: stability_score = 20
+    # -- Rule 4: Expense Stability (Weight: 15%) --
+    # Reasoning: Low volatility in spending indicates better financial control.
+    if len(daily_expenses) >= 5:
+        volatility_ratio = compute_volatility(daily_expenses)
+        if volatility_ratio < 0.30: stability_score = 100
+        elif volatility_ratio <= 0.70: stability_score = 70
+        elif volatility_ratio <= 1.20: stability_score = 40
+        else: stability_score = 20
+    else:
+        # Insufficient data, return neutral
+        stability_score = 60
 
-    health_score = int(0.5 * savings_score + 0.25 * expense_score + 0.25 * stability_score)
-    health_score = max(0, min(100, health_score))
+    # -- Rule 5: Budget Discipline (Weight: 15%) --
+    # Reasoning: Adherence to planned spending demonstrates discipline.
+    if total_budget is None or total_budget <= 0:
+        budget_score = 60 # Neutral for missing budget
+    else:
+        usage = safe_division(total_spent, total_budget)
+        if usage <= 0.90: budget_score = 100
+        elif usage <= 1.00: budget_score = 70
+        elif usage <= 1.20: budget_score = 40
+        else: budget_score = 10
 
-    if health_score >= 80: status = "Excellent"
-    elif health_score >= 60: status = "Good"
-    elif health_score >= 40: status = "Moderate"
-    elif health_score >= 20: status = "Risky"
+    # -- Rule 6: Income Consistency (Weight: 20%) --
+    # Reasoning: Stable income history provides a safer financial base.
+    if len(income_history) >= 3:
+        income_volatility = compute_volatility(income_history)
+        if income_volatility < 0.10: income_score = 100
+        elif income_volatility <= 0.25: income_score = 80
+        elif income_volatility <= 0.50: income_score = 50
+        else: income_score = 20
+    else:
+        # Insufficient history, do not penalize new users
+        income_score = 60
+
+    # -- Final Weighted Score --
+    raw_score = (
+        0.30 * savings_score +
+        0.20 * expense_score +
+        0.15 * stability_score +
+        0.15 * budget_score +
+        0.20 * income_score
+    )
+    
+    health_score = int(max(0, min(100, round(raw_score))))
+
+    if health_score >= 85: status = "Financially Strong"
+    elif health_score >= 70: status = "Stable"
+    elif health_score >= 55: status = "Vulnerable"
+    elif health_score >= 40: status = "At Risk"
     else: status = "Critical"
 
-    return health_score, status
+    return {
+        "health_score": health_score,
+        "health_status": status,
+        "breakdown": {
+            "savings": savings_score,
+            "expense": expense_score,
+            "stability": stability_score,
+            "budget": budget_score,
+            "income_consistency": income_score
+        }
+    }
 
 def get_date_range(range: str, start_date_str: str = None, end_date_str: str = None):
     today = datetime.utcnow().date()
@@ -111,7 +181,6 @@ async def get_dashboard(
     ).group_by(Expense.category)
 
     # Trends (Group by Date)
-    # Using simple date casting (SQLite compatible)
     stmt_trends = select(func.date(Expense.created_at), func.sum(Expense.amount)).where(
         Expense.user_id == current_user,
         Expense.created_at >= start_dt,
@@ -147,7 +216,7 @@ async def get_dashboard(
         Budget.year == year
     )
     
-    # Income (New)
+    # Income (Current Month)
     from .models import Income
     stmt_income = select(Income).where(
         Income.user_id == current_user,
@@ -155,39 +224,38 @@ async def get_dashboard(
         Income.year == year
     )
 
-    # EXECUTE QUERIES SEQUENTIALLY (Session assumes single connection)
+    # Income History (Last 6 Months)
+    stmt_income_history = select(Income.amount).where(
+        Income.user_id == current_user
+    ).order_by(Income.year.desc(), Income.month.desc()).limit(6)
+
+    # EXECUTE QUERIES
     
-    # 1. Total
     result_total = await session.execute(stmt_total)
     total_expense = result_total.scalar() or 0
     
-    # 2. Categories
     result_cats = await session.execute(stmt_cats)
-    categories_rows = result_cats.all()
-    categories = [{"name": r[0], "amount": r[1]} for r in categories_rows]
+    categories = [{"name": r[0], "amount": r[1]} for r in result_cats.all()]
     
-    # 3. Trends
     result_trends = await session.execute(stmt_trends)
     trends_rows = result_trends.all()
     
-    # 4. Prev Total
     result_prev = await session.execute(stmt_prev)
     prev_total = result_prev.scalar() or 0
     
-    # 5. Month Cats
     result_month_cats = await session.execute(stmt_month_cats)
-    month_cats_rows = result_month_cats.all()
-    monthly_cat_spent = {r[0]: r[1] for r in month_cats_rows}
+    monthly_cat_spent = {r[0]: r[1] for r in result_month_cats.all()}
     monthly_total = sum(monthly_cat_spent.values())
     
-    # 6. Budgets
     result_budgets = await session.execute(stmt_budgets)
     budgets = result_budgets.scalars().all()
     
-    # 7. Income
     result_income = await session.execute(stmt_income)
     income_record = result_income.scalars().first()
     income_val = income_record.amount if income_record else 0
+
+    result_income_history = await session.execute(stmt_income_history)
+    income_history = list(result_income_history.scalars().all())
 
     # --- PROCESS DATA ---
     
@@ -198,102 +266,81 @@ async def get_dashboard(
         change_percent = 100.0 if total_expense > 0 else 0.0
 
     # Avg Daily
-    days_count = max((end_dt - start_dt).days + 1, 1) # +1 inclusive
-    avg_daily = round(total_expense / days_count, 2) if days_count > 0 else 0
+    days_count = max((end_dt - start_dt).days + 1, 1)
+    avg_daily = round(total_expense / days_count, 3)
 
-    # Trend Formatting (Fill Gaps)
+    # Trend Formatting
     trend_map = {}
     curr = start_dt.date()
-    # Fill range with 0
     while curr <= end_dt.date():
-        trend_map[curr.strftime("%Y-%m-%d")] = 0
+        trend_map[curr.strftime("%Y-%m-%d")] = 0.0
         curr += timedelta(days=1)
         
-    # Populate actuals
     for date_val, amount in trends_rows:
-        # date_val is usually a string 'YYYY-MM-DD' in SQLite, or date obj in PG
         k = str(date_val)
         if k in trend_map:
-            trend_map[k] = amount
+            trend_map[k] = round(float(amount), 3)
             
-    # Convert to frontend format ("DD %b")
-    sorted_keys = sorted(trend_map.keys())
     trends_labels = []
     trends_values = []
-    
-    for k in sorted_keys:
+    for k in sorted(trend_map.keys()):
         d_obj = datetime.strptime(k, "%Y-%m-%d")
         trends_labels.append(d_obj.strftime("%d %b"))
         trends_values.append(trend_map[k])
         
-    trends = {
-        "labels": trends_labels,
-        "values": trends_values
-    }
+    trends = {"labels": trends_labels, "values": trends_values}
     
-    # Insights & Budgets
-    
-    # --- NEW: Advanced Insights Engine ---
+    # Insights (External Engine)
     from app.insights.engine import generate_insights
     structured_insights = await generate_insights(session, current_user)
-    
-    # Convert to simple strings for backward compatibility
     insights = [i.message for i in structured_insights]
     
-    # Fallback legacy check (optional, can be removed if coverage is good)
-    # Keeping budget logic for the 'budgets' list response
-    
+    # Budgets
     budget_list = []
-    overall_budget = None
+    total_budget_sum = 0.0
+    has_budgets = False
     
     for b in budgets:
+        has_budgets = True
         used = monthly_cat_spent.get(b.category, 0) if b.category else monthly_total
-        
         budget_list.append({
             "category": b.category if b.category else "overall",
-            "limit": b.amount,
-            "used": used,
-            "percent": round((used / b.amount) * 100, 1) if b.amount > 0 else 0
+            "limit": round(float(b.amount), 3),
+            "used": round(float(used), 3),
+            "percent": round((used / b.amount) * 100, 3) if b.amount > 0 else 0.0
         })
-        
-        if not b.category:
-            overall_budget = b
+        total_budget_sum += b.amount
 
-    # Remaining Budget Logic
-    if overall_budget:
-        remaining_budget = overall_budget.amount - monthly_total
-    else:
-        # Sum of remaining in categorized budgets
-        remaining_budget = sum(b.amount - monthly_cat_spent.get(b.category, 0) for b in budgets if b.category)
-
+    remaining_budget = total_budget_sum - monthly_total
     budget_exceeded = remaining_budget < 0
 
-    # Calculate Financial Health Score
-    total_budget = sum(b.amount for b in budgets)
-    income_missing = income_val <= 0
-    if not income_missing:
-        daily_values = list(trend_map.values())
-        health_score, health_status = calculate_health_score(total_expense, income_val, daily_values)
-    else:
-        health_score = None
-        health_status = "Pending Income"
+    # Calculate Financial Health Index
+    daily_values = list(trend_map.values())
+    health_ctx = calculate_health_score(
+        total_expense, 
+        income_val, 
+        daily_values, 
+        total_budget_sum if has_budgets else None, 
+        income_history
+    )
 
     return {
         "summary": {
-            "totalSpent": total_expense,
-            "totalBudget": total_budget,
+            "totalSpent": round(float(total_expense), 3),
+            "totalBudget": round(float(total_budget_sum), 3),
             "avgDaily": avg_daily,
-            "remainingBudget": round(remaining_budget, 2),
+            "remainingBudget": round(float(remaining_budget), 3),
             "budgetExceeded": budget_exceeded,
-            "changePercent": change_percent,
-            "income": income_val,
-            "incomeMissing": income_missing,
-            "savings": round(income_val - total_expense, 2) if not income_missing else 0,
-            "healthScore": health_score,
-            "healthStatus": health_status,
-            "message": "Add your monthly income through chat to unlock Financial Health Score." if income_missing else None
+            "changePercent": round(float(change_percent), 3),
+            "income": round(float(income_val), 3),
+            "incomeMissing": income_val <= 0,
+            "savings": round(float(income_val - total_expense), 3) if income_val > 0 else 0.0,
+            "healthScore": health_ctx["health_score"],
+            "healthStatus": health_ctx["health_status"],
+            "healthBreakdown": health_ctx["breakdown"],
+            "message": "Add your monthly income through chat to unlock Financial Health Score." if income_val <= 0 else None
         },
-        "categories": categories,
+        "categories": [{"name": c["name"], "amount": round(float(c["amount"]), 3)} for c in categories],
         "trends": trends,
         "insights": insights,
         "budgets": budget_list,
