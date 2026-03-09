@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from enum import Enum
-from typing import Optional
+from typing import Optional, Dict
 
 class InsightType(str, Enum):
     CRITICAL = "critical"
@@ -8,10 +8,13 @@ class InsightType(str, Enum):
     INFO = "info"
     POSITIVE = "positive"
     NEUTRAL = "neutral"
+    STREAK = "streak"
+    MILESTONE = "milestone"
 
 class Insight(BaseModel):
     type: InsightType
     message: str
     metric: Optional[str] = None  # e.g., "₹5000", "+15%"
-    action: Optional[str] = None  # Suggested action (e.g., "Reduce dining out")
-    priority: int = 0 # Higher is more important
+    action: Optional[str] = None  # Suggested action
+    priority: int = 0             # Higher is more important
+    metadata: Optional[Dict] = None # For frontend extras (e.g., trend: "up")

@@ -67,7 +67,10 @@ def calculate_health_score(
 
     # -- Rule 4: Expense Stability (Weight: 15%) --
     # Reasoning: Low volatility in spending indicates better financial control.
-    if len(daily_expenses) >= 5:
+    # PRO-ADVISOR FIX: If spending is extremely low (Low-Spend Immunity), don't penalize for volatility.
+    if total_spent < 1000:
+        stability_score = 100  # reward discipline
+    elif len(daily_expenses) >= 5:
         volatility_ratio = compute_volatility(daily_expenses)
         if volatility_ratio < 0.30: stability_score = 100
         elif volatility_ratio <= 0.70: stability_score = 70

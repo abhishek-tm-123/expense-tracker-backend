@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
-from typing import List, Dict, Tuple
-from collections import defaultdict
+from typing import List, Dict, Tuple, Optional
 import statistics
+import calendar
 
 from .schemas import Insight, InsightType
 
@@ -10,158 +10,205 @@ from .schemas import Insight, InsightType
 def calculate_z_scores(values: List[float]) -> List[float]:
     if len(values) < 2:
         return [0.0] * len(values)
-    
     mean = statistics.mean(values)
     stdev = statistics.stdev(values)
-    
     if stdev == 0:
         return [0.0] * len(values)
-        
     return [(x - mean) / stdev for x in values]
+
+def get_month_info(date_obj: datetime) -> Tuple[int, int]:
+    """Returns (current_day, total_days_in_month)"""
+    last_day = calendar.monthrange(date_obj.year, date_obj.month)[1]
+    return date_obj.day, last_day
 
 # --- Analyzers ---
 
 def analyze_budget_health(budgets: List[Dict], monthly_spending: Dict[str, float], total_spent_month: float) -> List[Insight]:
-    """
-    Checks for budget overruns and usage warnings.
-    """
+    """Checks for budget overruns and highlights safe spending."""
     insights = []
-    
-    # 1. Overall Budget Analysis (if applicable)
-    # This logic depends on how you structure "overall" budget. 
-    # Assuming 'budgets' list contains both category-specific and possibly an overall one.
     
     for budget in budgets:
         category = budget.get("category")
         limit = budget.get("amount", 0)
-        
-        if limit <= 0:
-            continue
+        if limit <= 0: continue
             
-        if category:
-            spent = monthly_spending.get(category, 0)
-            label = category.title()
-        else:
-            # Overall budget
-            spent = total_spent_month
-            label = "Overall"
-
+        spent = monthly_spending.get(category, total_spent_month if not category else 0)
+        label = category.title() if category else "Overall"
         usage_percent = (spent / limit) * 100
         
         if usage_percent >= 100:
             insights.append(Insight(
                 type=InsightType.CRITICAL,
                 message=f"Budget exceeded for {label}.",
-                metric=f"₹{spent} / ₹{limit}",
-                action=f"Stop spending on {label} immediately to avoid debt.",
+                metric=f"₹{int(spent)} / ₹{int(limit)}",
+                action=f"Reduce {label} spending to stay on track.",
                 priority=10
             ))
-        elif usage_percent >= 90:
+        elif usage_percent > 90:
             insights.append(Insight(
                 type=InsightType.WARNING,
-                message=f"You've used 90% of your {label} budget.",
-                metric=f"{int(usage_percent)}%",
-                action="Review planned expenses for the rest of the month.",
+                message=f"You've used {int(usage_percent)}% of your {label} budget.",
+                metric=f"₹{int(limit - spent)} left",
+                action="Be careful with non-essential purchases.",
                 priority=8
             ))
-        elif usage_percent >= 75 and datetime.utcnow().day < 15:
-             # High spending early in the month
-             insights.append(Insight(
-                type=InsightType.WARNING,
-                message=f"Rapid spending in {label} (75% used by mid-month).",
-                metric=f"{int(usage_percent)}%",
-                action="Pace your spending to last the month.",
-                priority=7
-            ))
-
     return insights
 
-def analyze_spending_trends(current_month_daily_avg: float, prev_month_daily_avg: float) -> List[Insight]:
-    """
-    Compares daily average spending between months.
-    """
+def analyze_pacing(total_spent: float, total_budget: float, current_day: int) -> List[Insight]:
+    """Analyzes if spending is 'paced' well for the month."""
     insights = []
+    if total_budget <= 0: return insights
     
-    if prev_month_daily_avg <= 0:
-        return insights # Cannot compare
-        
-    change_percent = ((current_month_daily_avg - prev_month_daily_avg) / prev_month_daily_avg) * 100
+    _, days_in_month = get_month_info(datetime.utcnow())
+    month_progress = current_day / days_in_month
+    budget_usage = total_spent / total_budget
     
-    if change_percent > 20:
-        insights.append(Insight(
-            type=InsightType.WARNING,
-            message="Spending is significantly higher than last month.",
-            metric=f"+{change_percent:.1f}%",
-            action="Check for unusual one-time expenses.",
-            priority=6
-        ))
-    elif change_percent < -10:
+    # 1. Great pacing (Positive)
+    if 0.4 <= month_progress <= 0.6 and budget_usage < (month_progress * 0.8):
         insights.append(Insight(
             type=InsightType.POSITIVE,
-            message="You are spending less than last month!",
-            metric=f"{change_percent:.1f}%",
-            action="Great job! Consider saving the surplus.",
-            priority=5
+            message="Your pacing is incredible! Halfway through and well under budget.",
+            metric=f"{int(budget_usage*100)}% used",
+            action="At this rate, you'll have a healthy surplus for savings.",
+            priority=8,
+            metadata={"progress": budget_usage}
         ))
-        
+    
+    # 2. Predicted Overrun (Proactive Warning)
+    if current_day > 7 and budget_usage > (month_progress * 1.2) and budget_usage < 1.0:
+        over_amt = int(total_spent - (total_budget * month_progress))
+        insights.append(Insight(
+            type=InsightType.WARNING,
+            message="Early warning: You're spending faster than usual.",
+            metric=f"₹{over_amt} over pace",
+            action="Try a 'No Spend' weekend to get back in line.",
+            priority=7
+        ))
     return insights
 
-def detect_anomalies(recent_expenses: List[Dict]) -> List[Insight]:
-    """
-    Uses Z-score to find unusually high single expenses in the recent list.
-    Expects recent_expenses to be a list of dicts with 'amount', 'title', 'date'.
-    """
+def analyze_streaks(hist_spending: Dict[Tuple[int, int], float], hist_budgets: Dict[Tuple[int, int], float]) -> List[Insight]:
+    """Identifies streaks and milestones (Celebratory)."""
     insights = []
+    now = datetime.utcnow()
+    streak = 0
     
-    if len(recent_expenses) < 5:
-        return insights
+    # Check last 6 months in reverse
+    for i in range(1, 7):
+        prev_date = (now.replace(day=1) - timedelta(days=i*28)).replace(day=1)
+        key = (prev_date.year, prev_date.month)
         
-    amounts = [e['amount'] for e in recent_expenses]
-    z_scores = calculate_z_scores(amounts)
-    
-    # Check the most recent few expenses for anomalies
-    # unique_anomalies = set()
+        spent = hist_spending.get(key)
+        limit = hist_budgets.get(key)
+        
+        if spent is not None and limit is not None and spent <= limit:
+            streak += 1
+        elif spent is not None: # Broke streak
+            break
 
-    for i, z in enumerate(z_scores):
-        # corresponding expense
-        exp = recent_expenses[i]
-        
-        # We only care about high anomalies (z > 2.0 means top ~2.5% of curve)
-        if z > 2.5:
-             insights.append(Insight(
-                type=InsightType.WARNING,
-                message=f"Unusual high expense detected: {exp['title']}",
-                metric=f"₹{exp['amount']}",
-                action="Verify this wasn't an accidental duplicate.",
-                priority=7
-            ))
+    if streak >= 3:
+        insights.append(Insight(
+            type=InsightType.STREAK,
+            message=f"Unstoppable! {streak} months in a row under budget.",
+            metric=f"{streak} Month Streak",
+            action="You're building elite financial habits.",
+            priority=9,
+            metadata={"streak_count": streak}
+        ))
+    elif streak == 1:
+         insights.append(Insight(
+            type=InsightType.POSITIVE,
+            message="Nice win! You stayed under budget last month.",
+            metric="Goal Hit",
+            action="Keep this momentum going for March!",
+            priority=5
+        ))
+    return insights
+
+def analyze_velocity(daily_spend: Dict[datetime, float]) -> List[Insight]:
+    """Detects multi-day spending bursts (Velocity)."""
+    insights = []
+    if len(daily_spend) < 5: return insights
     
-    # Deduplicate by message if needed, but here we just return top ones
-    return insights[:2] # Limit number of anomalies reported
+    sorted_days = sorted(daily_spend.keys())
+    values = [daily_spend[d] for d in sorted_days]
+    
+    # Rolling 3-day window
+    for i in range(len(values) - 2):
+        window_sum = sum(values[i:i+3])
+        # Only flag if significant (e.g. > 15% of average month or absolute ₹5000)
+        if window_sum > 5000:
+            insights.append(Insight(
+                type=InsightType.WARNING,
+                message="Spending Heatwave: High activity over the last 3 days.",
+                metric=f"₹{int(window_sum)} burst",
+                action="Daily 'small' spends are adding up fast.",
+                priority=7,
+                metadata={"days": 3}
+            ))
+            break # Only report the most recent burst
+            
+    return insights
+
+def analyze_dormancy(category_last_spend: Dict[str, datetime]) -> List[Insight]:
+    """Detects categories you haven't spent in (Nudge)."""
+    insights = []
+    now = datetime.utcnow()
+    
+    for cat, last_date in category_last_spend.items():
+        days_ago = (now - last_date).days
+        if 45 <= days_ago <= 90:
+            insights.append(Insight(
+                type=InsightType.INFO,
+                message=f"Category 'cleanse'? No {cat} spend for {days_ago} days.",
+                metric="Dormant",
+                action=f"If this was a subscription, you might be safe to cancel it!",
+                priority=6
+            ))
+    return insights
+
+def analyze_spending_trends(current_avg: float, prev_avg: float) -> List[Insight]:
+    """Compares daily averages with a positive twist."""
+    insights = []
+    if prev_avg <= 0: return insights
+    
+    diff = prev_avg - current_avg
+    if diff > 100: # Saving ₹100+ per day
+        insights.append(Insight(
+            type=InsightType.POSITIVE,
+            message=f"Daily spending is down ₹{int(diff)} vs last month!",
+            metric="Trend Down",
+            action="You're effectively saving an extra ₹3000/mo.",
+            priority=8
+        ))
+    elif diff < -500: # Spending much more
+        insights.append(Insight(
+            type=InsightType.WARNING,
+            message="Spending is picking up speed compared to last month.",
+            metric="Trend Up",
+            action="Check if these are essential or impulsives.",
+            priority=6
+        ))
+    return insights
 
 def analyze_category_patterns(monthly_spending: Dict[str, float], total_spent: float) -> List[Insight]:
-    """
-    Identifies top spending categories.
-    """
+    """Standard category analysis."""
     insights = []
-    if total_spent <= 0:
-        return insights
-        
-    sorted_cats = sorted(monthly_spending.items(), key=lambda x: x[1], reverse=True)
+    if total_spent <= 0: return insights
     
-    if not sorted_cats:
-        return insights
-        
-    top_cat, top_amt = sorted_cats[0]
+    top_cat = max(monthly_spending, key=monthly_spending.get)
+    top_amt = monthly_spending[top_cat]
     percent = (top_amt / total_spent) * 100
     
     if percent > 40:
-         insights.append(Insight(
+        insights.append(Insight(
             type=InsightType.INFO,
-            message=f"Most of your money goes to {top_cat.title()}.",
-            metric=f"{int(percent)}%",
-            action=f"See if you can reduce {top_cat} expenses.",
+            message=f"Insight: {top_cat.title()} is your main expense focus.",
+            metric=f"{int(percent)}% of total",
+            action=f"Any recurring {top_cat} costs to optimize?",
             priority=4
         ))
-        
     return insights
+
+def detect_anomalies(recent_expenses: List[Dict]) -> List[Insight]:
+    """Stub to maintain compatibility in engine.py while we transition to velocity."""
+    return []
