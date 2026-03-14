@@ -51,68 +51,119 @@ def calculate_health_score(
     # -- Rule 2: Savings Strength (Weight: 30%) --
     # Reasoning: Higher savings rates are the primary driver of long-term wealth.
     savings_rate = safe_division(income - total_spent, income)
-    if savings_rate >= 0.30: savings_score = 100
-    elif savings_rate >= 0.15: savings_score = 80
-    elif savings_rate >= 0.05: savings_score = 60
-    elif savings_rate >= 0: savings_score = 40
-    else: savings_score = 10
+    savings_detail = "Good"
+    if savings_rate >= 0.30: 
+        savings_score = 100
+        savings_detail = "Excellent savings (≥30%)"
+    elif savings_rate >= 0.15: 
+        savings_score = 80
+        savings_detail = "Good savings (15-30%)"
+    elif savings_rate >= 0.05: 
+        savings_score = 60
+        savings_detail = "Fair savings (5-15%)"
+    elif savings_rate >= 0: 
+        savings_score = 40
+        savings_detail = "Low savings (<5%)"
+    else: 
+        savings_score = 10
+        savings_detail = "Spending exceeds income"
 
     # -- Rule 3: Expense Sustainability (Weight: 20%) --
     # Reasoning: Living within means is critical for financial stability.
     expense_ratio = safe_division(total_spent, income)
-    if expense_ratio <= 0.60: expense_score = 100
-    elif expense_ratio <= 0.80: expense_score = 80
-    elif expense_ratio <= 1.00: expense_score = 60
-    else: expense_score = 20
+    expense_detail = "Good"
+    if expense_ratio <= 0.60: 
+        expense_score = 100
+        expense_detail = "Healthy spending level (≤60%)"
+    elif expense_ratio <= 0.80: 
+        expense_score = 80
+        expense_detail = "Moderate spending (60-80%)"
+    elif expense_ratio <= 1.00: 
+        expense_score = 60
+        expense_detail = "High spending (80-100%)"
+    else: 
+        expense_score = 20
+        expense_detail = "Critical overspending"
 
     # -- Rule 4: Expense Stability (Weight: 15%) --
     # Reasoning: Low volatility in spending indicates better financial control.
     # PRO-ADVISOR FIX: If spending is extremely low (Low-Spend Immunity), don't penalize for volatility.
+    stability_detail = "Good"
     if total_spent < 1000:
         stability_score = 100  # reward discipline
+        stability_detail = "Very low spending, highly stable"
     elif len(daily_expenses) >= 5:
         volatility_ratio = compute_volatility(daily_expenses)
-        if volatility_ratio < 0.30: stability_score = 100
-        elif volatility_ratio <= 0.70: stability_score = 70
-        elif volatility_ratio <= 1.20: stability_score = 40
-        else: stability_score = 20
+        if volatility_ratio < 0.30: 
+            stability_score = 100
+            stability_detail = "Very consistent daily spending"
+        elif volatility_ratio <= 0.70: 
+            stability_score = 70
+            stability_detail = "Moderately consistent daily spending"
+        elif volatility_ratio <= 1.20: 
+            stability_score = 40
+            stability_detail = "Irregular daily spending"
+        else: 
+            stability_score = 20
+            stability_detail = "Highly erratic daily spending"
     else:
         # Insufficient data, return neutral
         stability_score = 60
+        stability_detail = "Not enough data"
 
     # -- Rule 5: Budget Discipline (Weight: 15%) --
     # Reasoning: Adherence to planned spending demonstrates discipline.
-    if total_budget is None or total_budget <= 0:
-        budget_score = 60 # Neutral for missing budget
-    else:
+    budget_score = None
+    budget_detail = "Not configured"
+    if total_budget is not None and total_budget > 0:
         usage = safe_division(total_spent, total_budget)
-        if usage <= 0.90: budget_score = 100
-        elif usage <= 1.00: budget_score = 70
-        elif usage <= 1.20: budget_score = 40
-        else: budget_score = 10
+        if usage <= 0.90: 
+            budget_score = 100
+            budget_detail = "Well within budget"
+        elif usage <= 1.00: 
+            budget_score = 70
+            budget_detail = "Close to budget limit"
+        elif usage <= 1.20: 
+            budget_score = 40
+            budget_detail = "Over budget (<20%)"
+        else: 
+            budget_score = 10
+            budget_detail = "Significantly over budget"
 
     # -- Rule 6: Income Consistency (Weight: 20%) --
     # Reasoning: Stable income history provides a safer financial base.
+    income_score = None
+    income_detail = "Not enough history"
     if len(income_history) >= 3:
         income_volatility = compute_volatility(income_history)
-        if income_volatility < 0.10: income_score = 100
-        elif income_volatility <= 0.25: income_score = 80
-        elif income_volatility <= 0.50: income_score = 50
-        else: income_score = 20
-    else:
-        # Insufficient history, do not penalize new users
-        income_score = 60
+        if income_volatility < 0.10: 
+            income_score = 100
+            income_detail = "Very stable income"
+        elif income_volatility <= 0.25: 
+            income_score = 80
+            income_detail = "Stable income"
+        elif income_volatility <= 0.50: 
+            income_score = 50
+            income_detail = "Fluctuating income"
+        else: 
+            income_score = 20
+            income_detail = "Highly erratic income"
 
     # -- Final Weighted Score --
-    raw_score = (
-        0.30 * savings_score +
-        0.20 * expense_score +
-        0.15 * stability_score +
-        0.15 * budget_score +
-        0.20 * income_score
-    )
+    total_weight = 0.65
+    raw_score = 0.30 * savings_score + 0.20 * expense_score + 0.15 * stability_score
     
-    health_score = int(max(0, min(100, round(raw_score))))
+    if budget_score is not None:
+        raw_score += 0.15 * budget_score
+        total_weight += 0.15
+        
+    if income_score is not None:
+        raw_score += 0.20 * income_score
+        total_weight += 0.20
+        
+    normalized_score = raw_score / total_weight
+    
+    health_score = int(max(0, min(100, round(normalized_score))))
 
     if health_score >= 85: status = "Financially Strong"
     elif health_score >= 70: status = "Stable"
@@ -124,11 +175,11 @@ def calculate_health_score(
         "health_score": health_score,
         "health_status": status,
         "breakdown": {
-            "savings": savings_score,
-            "expense": expense_score,
-            "stability": stability_score,
-            "budget": budget_score,
-            "income_consistency": income_score
+            "savings": {"score": savings_score, "details": savings_detail},
+            "expense": {"score": expense_score, "details": expense_detail},
+            "stability": {"score": stability_score, "details": stability_detail},
+            "budget": {"score": budget_score, "details": budget_detail},
+            "income_consistency": {"score": income_score, "details": income_detail}
         }
     }
 
@@ -202,24 +253,25 @@ async def get_dashboard(
     )
     
     # --- 3. Monthly (for Budget) ---
-    now = datetime.utcnow()
-    month, year = now.month, now.year
-    month_start = datetime(year, month, 1)
+    # Determine the target month and year based on the requested date range
+    target_date = end_dt
+    month, year = target_date.month, target_date.year
 
-    # Monthly Category Spend
+    # Monthly Category Spend (for the target month)
     stmt_month_cats = select(Expense.category, func.sum(Expense.amount)).where(
         Expense.user_id == current_user,
-        Expense.created_at >= month_start
+        Expense.created_at >= start_dt,
+        Expense.created_at <= end_dt
     ).group_by(Expense.category)
     
-    # Budgets
+    # Budgets (for the target month/year)
     stmt_budgets = select(Budget).where(
         Budget.user_id == current_user,
         Budget.month == month,
         Budget.year == year
     )
     
-    # Income (Current Month)
+    # Income (Current Month span)
     from .models import Income
     stmt_income = select(Income).where(
         Income.user_id == current_user,
