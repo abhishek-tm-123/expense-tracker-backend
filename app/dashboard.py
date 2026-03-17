@@ -352,19 +352,35 @@ async def get_dashboard(
     
     # Budgets
     budget_list = []
-    total_budget_sum = 0.0
+    overall_budget_val = 0.0
+    sum_category_budgets = 0.0
     has_budgets = False
     
+    # Pass 1: Calculate sums and check presence
     for b in budgets:
         has_budgets = True
+        if b.category:
+            sum_category_budgets += float(b.amount)
+        else:
+            overall_budget_val = float(b.amount)
+
+    # Logical Fix: Total budget is the max of overall OR the sum of categories
+    total_budget_sum = max(overall_budget_val, sum_category_budgets)
+
+    # Pass 2: Build the list with corrected overall limit
+    for b in budgets:
         used = monthly_cat_spent.get(b.category, 0) if b.category else monthly_total
+        b_limit = float(b.amount)
+        
+        # If this is the overall line item, use the effective total budget
+        limit_to_show = total_budget_sum if not b.category else b_limit
+
         budget_list.append({
             "category": b.category if b.category else "overall",
-            "limit": round(float(b.amount), 3),
+            "limit": round(limit_to_show, 3),
             "used": round(float(used), 3),
-            "percent": round((used / b.amount) * 100, 3) if b.amount > 0 else 0.0
+            "percent": round((used / limit_to_show) * 100, 3) if limit_to_show > 0 else 0.0
         })
-        total_budget_sum += b.amount
 
     remaining_budget = total_budget_sum - monthly_total
     budget_exceeded = remaining_budget < 0
