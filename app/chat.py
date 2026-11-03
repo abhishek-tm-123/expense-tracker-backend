@@ -149,7 +149,6 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
     try:
         result = predict_intent(text)
         probs = result["probs"]
-        
         # Apply Boosts (Local logic kept here as it's part of the routing decision)
         expense_verbs = ["spent", "paid", "bought", "purchased", "went", "ate", "had", "visit","add expense","add"]
         if any(word in text.lower() for word in expense_verbs):
@@ -188,8 +187,7 @@ async def chat_endpoint(chatmessage: chatMessage, session: Session = Depends(get
              probs["fallback"] = 0.0
         
         intent = max(probs, key=probs.get)
-        confidence = probs[intent]
-        
+        confidence = probs[intent]         
         if confidence < CONFIDENCE_THRESHOLD:
             intent = "fallback"
             

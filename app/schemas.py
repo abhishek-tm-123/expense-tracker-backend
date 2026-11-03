@@ -42,4 +42,6 @@ class BudgetRead(BaseModel):
 class ChangePassword(BaseModel):
     old_password: str
     new_password: str = Field(..., min_length=8)
-    
+
+class TokenRefresh(BaseModel):
+    refresh_token: str | None = None

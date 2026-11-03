@@ -16,7 +16,7 @@ engine = create_async_engine(
     DATABASE_URL, 
     echo=DEBUG_MODE, 
     pool_pre_ping=True,
-    connect_args={"ssl": "require"}
+    
 )
 
 async def create_db():

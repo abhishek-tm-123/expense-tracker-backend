@@ -8,7 +8,7 @@ import os
 
 
 
-from .schemas import Register,Login
+from .schemas import Register, Login, TokenRefresh
 from .database import get_session
 from .models import Users
 
@@ -73,14 +73,16 @@ async def login(user: Login,response:Response,session:Session=Depends(get_sessio
         path="/",
         max_age=60*60*24*7  # 7 days
     )
-    return {"access_token": access}
+    return {"access_token": access, "refresh_token": refresh}
 
 @router.post("/refresh")
-async def refresh_token(request: Request,session:Session=Depends(get_session)):
+async def refresh_token(request: Request, body: TokenRefresh = None, session: Session = Depends(get_session)):
     refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token and body and body.refresh_token:
+        refresh_token = body.refresh_token
     
     if not refresh_token:
-        print("DEBUG: Refresh token cookie is MISSING")
+        print("DEBUG: Refresh token is MISSING (neither in cookie nor in body)")
         raise HTTPException(401, "Refresh token missing")
 
     try:
